@@ -1,6 +1,6 @@
 describe Hbc::Pkg, :cask do
   describe "#uninstall" do
-    let(:fake_system_command) { Hbc::NeverSudoSystemCommand }
+    let(:fake_system_command) { NeverSudoSystemCommand }
     let(:empty_response) { double(stdout: "", plist: { "volume" => "/", "install-location" => "", "paths" => {} }) }
     let(:pkg) { described_class.new("my.fake.pkg", fake_system_command) }
 
@@ -101,7 +101,7 @@ describe Hbc::Pkg, :cask do
   end
 
   describe "#info" do
-    let(:fake_system_command) { class_double(Hbc::SystemCommand) }
+    let(:fake_system_command) { class_double(SystemCommand) }
 
     let(:volume) { "/" }
     let(:install_location) { "tmp" }
@@ -123,7 +123,7 @@ describe Hbc::Pkg, :cask do
     end
 
     let(:pkg_info_plist) do
-      <<~EOS
+      <<~XML
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
         <plist version="1.0">
@@ -134,11 +134,11 @@ describe Hbc::Pkg, :cask do
           <string>#{volume}</string>
           <key>paths</key>
           <dict>
-            #{(pkg_files + pkg_directories).map { |f| "<key>#{f}</key><dict></dict>" }.join("")}
+            #{(pkg_files + pkg_directories).map { |f| "<key>#{f}</key><dict></dict>" }.join}
           </dict>
         </dict>
         </plist>
-      EOS
+      XML
     end
 
     it "correctly parses a Property List" do
@@ -146,9 +146,9 @@ describe Hbc::Pkg, :cask do
 
       expect(fake_system_command).to receive(:run!).with(
         "/usr/sbin/pkgutil",
-      args: ["--pkg-info-plist", pkg_id],
+        args: ["--pkg-info-plist", pkg_id],
       ).and_return(
-        Hbc::SystemCommand::Result.new(nil, pkg_info_plist, nil, 0),
+        SystemCommand::Result.new(nil, pkg_info_plist, nil, 0),
       )
 
       info = pkg.info

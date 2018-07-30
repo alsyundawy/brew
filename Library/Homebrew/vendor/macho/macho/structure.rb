@@ -8,11 +8,11 @@ module MachO
     FORMAT = "".freeze
 
     # The size of the data structure, in bytes.
-    # @return [Fixnum] the size, in bytes
+    # @return [Integer] the size, in bytes
     # @api private
     SIZEOF = 0
 
-    # @return [Fixnum] the size, in bytes, of the represented structure.
+    # @return [Integer] the size, in bytes, of the represented structure.
     def self.bytesize
       self::SIZEOF
     end
@@ -25,6 +25,16 @@ module MachO
       format = Utils.specialize_format(self::FORMAT, endianness)
 
       new(*bin.unpack(format))
+    end
+
+    # @return [Hash] a hash representation of this {MachOStructure}.
+    def to_h
+      {
+        "structure" => {
+          "format" => self.class::FORMAT,
+          "bytesize" => self.class.bytesize,
+        },
+      }
     end
   end
 end

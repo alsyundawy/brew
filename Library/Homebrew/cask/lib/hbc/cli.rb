@@ -2,6 +2,9 @@ require "optparse"
 require "shellwords"
 
 require "extend/optparse"
+
+require "hbc/config"
+
 require "hbc/cli/options"
 
 require "hbc/cli/abstract_command"
@@ -18,7 +21,6 @@ require "hbc/cli/install"
 require "hbc/cli/list"
 require "hbc/cli/outdated"
 require "hbc/cli/reinstall"
-require "hbc/cli/search"
 require "hbc/cli/style"
 require "hbc/cli/uninstall"
 require "hbc/cli/upgrade"
@@ -27,7 +29,6 @@ require "hbc/cli/zap"
 
 require "hbc/cli/abstract_internal_command"
 require "hbc/cli/internal_audit_modified_casks"
-require "hbc/cli/internal_appcast_checkpoint"
 require "hbc/cli/internal_dump"
 require "hbc/cli/internal_help"
 require "hbc/cli/internal_stanza"
@@ -88,44 +89,35 @@ module Hbc
       @lookup.fetch(command_name, command_name)
     end
 
-    def self.should_init?(command)
-      command.is_a?(Class) && !command.abstract? && command.needs_init?
-    end
-
     def self.run_command(command, *args)
-      if command.respond_to?(:run)
-        # usual case: built-in command verb
-        command.run(*args)
-      elsif require?(which("brewcask-#{command}.rb", ENV["HOMEBREW_PATH"]))
-        # external command as Ruby library on PATH, Homebrew-style
-      elsif command.to_s.include?("/") && require?(command.to_s)
-        # external command as Ruby library with literal path, useful
-        # for development and troubleshooting
-        sym = File.basename(command.to_s, ".rb").capitalize
-        klass = begin
-                  const_get(sym)
-                rescue NameError
-                  nil
-                end
+      return command.run(*args) if command.respond_to?(:run)
 
-        if klass.respond_to?(:run)
-          # invoke "run" on a Ruby library which follows our coding conventions
-          # other Ruby libraries must do everything via "require"
-          klass.run(*args)
+      tap_cmd_directories = Tap.cmd_directories
+
+      path = PATH.new(tap_cmd_directories, ENV["HOMEBREW_PATH"])
+
+      external_ruby_cmd = tap_cmd_directories.map { |d| d/"brewcask-#{command}.rb" }
+                                             .detect(&:file?)
+      external_ruby_cmd ||= which("brewcask-#{command}.rb", path)
+
+      if external_ruby_cmd
+        require external_ruby_cmd
+
+        klass = begin
+          const_get(command.to_s.capitalize.to_sym)
+        rescue NameError
+          # External command is a stand-alone Ruby script.
+          return
         end
-      elsif external_command = which("brewcask-#{command}", ENV["HOMEBREW_PATH"])
-        # arbitrary external executable on PATH, Homebrew-style
-        exec external_command, *ARGV[1..-1]
-      elsif Pathname.new(command.to_s).executable? &&
-            command.to_s.include?("/") &&
-            !command.to_s.match(/\.rb$/)
-        # arbitrary external executable with literal path, useful
-        # for development and troubleshooting
-        exec command, *ARGV[1..-1]
-      else
-        # failure
-        NullCommand.new(command, *args).run
+
+        return klass.run(*args)
       end
+
+      if external_command = which("brewcask-#{command}", path)
+        exec external_command, *ARGV[1..-1]
+      end
+
+      NullCommand.new(command, *args).run
     end
 
     def self.run(*args)
@@ -163,8 +155,7 @@ module Hbc
 
       MacOS.full_version = ENV["MACOS_VERSION"] unless ENV["MACOS_VERSION"].nil?
 
-      Hbc.default_tap.install unless Hbc.default_tap.installed?
-      Hbc.init if self.class.should_init?(command)
+      Tap.default_cask_tap.install unless Tap.default_cask_tap.installed?
       self.class.run_command(command, *args)
     rescue CaskError, ArgumentError, OptionParser::InvalidOption => e
       msg = e.message

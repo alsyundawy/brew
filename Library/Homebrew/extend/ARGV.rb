@@ -18,6 +18,7 @@ module HomebrewArgvExtension
       --include-test
       --verbose
       --force
+      --display-times
       -i
       -v
       -d
@@ -261,7 +262,7 @@ module HomebrewArgvExtension
   end
 
   def force_bottle?
-    include? "--force-bottle"
+    include?("--force-bottle")
   end
 
   def fetch_head?

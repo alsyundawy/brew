@@ -24,7 +24,7 @@ module Formulary
     const_set(namespace, mod)
     begin
       mod.module_eval(contents, path)
-    rescue ScriptError => e
+    rescue NoMethodError, ArgumentError, ScriptError => e
       raise FormulaUnreadableError.new(name, e)
     end
     class_name = class_s(name)
@@ -47,14 +47,8 @@ module Formulary
     cache[path] = klass
   end
 
-  if IO.method_defined?(:set_encoding)
-    def self.ensure_utf8_encoding(io)
-      io.set_encoding(Encoding::UTF_8)
-    end
-  else
-    def self.ensure_utf8_encoding(io)
-      io
-    end
+  def self.ensure_utf8_encoding(io)
+    io.set_encoding(Encoding::UTF_8)
   end
 
   def self.class_s(name)
@@ -112,10 +106,10 @@ module Formulary
         resource = Resource.new(formula_name) { url bottle_name }
         resource.specs[:bottle] = true
         downloader = CurlDownloadStrategy.new resource.name, resource
-        @bottle_filename = downloader.cached_location
-        cached = @bottle_filename.exist?
+        cached = downloader.cached_location.exist?
         downloader.fetch
         ohai "Pouring the cached bottle" if cached
+        @bottle_filename = downloader.cached_location
       else
         @bottle_filename = Pathname(bottle_name).realpath
       end
@@ -277,6 +271,7 @@ module Formulary
   # * a formula URL
   # * a local bottle reference
   def self.factory(ref, spec = :stable, alias_path: nil, from: nil)
+    raise ArgumentError, "Formulae must have a ref!" unless ref
     loader_for(ref, from: from).get_formula(spec, alias_path: alias_path)
   end
 
@@ -295,6 +290,13 @@ module Formulary
     else
       factory(rack.basename.to_s, spec || :stable, alias_path: alias_path, from: :rack)
     end
+  end
+
+  # Return whether given rack is keg-only
+  def self.keg_only?(rack)
+    Formulary.from_rack(rack).keg_only?
+  rescue FormulaUnavailableError, TapFormulaAmbiguityError, TapFormulaWithOldnameAmbiguityError
+    false
   end
 
   # Return a Formula instance for the given keg.

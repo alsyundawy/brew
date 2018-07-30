@@ -5,8 +5,7 @@ module Superenv
     # @private
     def bin
       return unless DevelopmentTools.installed?
-
-      (HOMEBREW_SHIMS_PATH/"super").realpath
+      (HOMEBREW_SHIMS_PATH/"mac/super").realpath
     end
   end
 
@@ -58,6 +57,14 @@ module Superenv
 
   def homebrew_extra_library_paths
     paths = []
+    if compiler == :llvm_clang
+      if MacOS::CLT.installed?
+        paths << "/usr/lib"
+      else
+        paths << "#{MacOS.sdk_path}/usr/lib"
+      end
+      paths << Formula["llvm"].opt_lib.to_s
+    end
     paths << MacOS::X11.lib.to_s if x11?
     paths << "#{effective_sysroot}/System/Library/Frameworks/OpenGL.framework/Versions/Current/Libraries"
     paths
@@ -132,6 +139,6 @@ module Superenv
   end
 
   def no_weak_imports
-    append "HOMEBREW_CCCFG", "w" if no_weak_imports_support?
+    append_to_cccfg "w" if no_weak_imports_support?
   end
 end

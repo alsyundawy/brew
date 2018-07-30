@@ -12,15 +12,7 @@ if RUBY_X < 2 || (RUBY_X == 2 && RUBY_Y < 3)
   raise "Homebrew must be run under Ruby 2.3! You're running #{RUBY_VERSION}."
 end
 
-require "pathname"
-HOMEBREW_LIBRARY_PATH = Pathname.new(__FILE__).realpath.parent
-
-require "English"
-unless $LOAD_PATH.include?(HOMEBREW_LIBRARY_PATH.to_s)
-  $LOAD_PATH.unshift(HOMEBREW_LIBRARY_PATH.to_s)
-end
-
-require "global"
+require_relative "global"
 
 begin
   trap("INT", std_trap) # restore default CTRL-C handler
@@ -78,8 +70,8 @@ begin
   # - no arguments are passed
   # - if cmd is Cask, let Cask handle the help command instead
   if (empty_argv || help_flag) && cmd != "cask"
-    require "cmd/help"
-    Homebrew.help cmd, empty_argv: empty_argv
+    require "help"
+    Homebrew::Help.help cmd, empty_argv: empty_argv
     # `Homebrew.help` never returns, except for external/unknown commands.
   end
 
@@ -119,8 +111,8 @@ begin
     exec HOMEBREW_BREW_FILE, cmd, *ARGV
   end
 rescue UsageError => e
-  require "cmd/help"
-  Homebrew.help cmd, usage_error: e.message
+  require "help"
+  Homebrew::Help.help cmd, usage_error: e.message
 rescue SystemExit => e
   onoe "Kernel.exit" if ARGV.verbose? && !e.success?
   $stderr.puts e.backtrace if ARGV.debug?

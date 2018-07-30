@@ -16,20 +16,22 @@ module Hbc
           Caskroom.casks.select do |cask|
             cask.outdated?(greedy?)
           end
-        }).select { |cask| cask.outdated?(true) }
+        }).select do |cask|
+          raise CaskNotInstalledError, cask unless cask.installed? || force?
+          cask.outdated?(true)
+        end
 
         if outdated_casks.empty?
           oh1 "No Casks to upgrade"
           return
         end
 
+        ohai "Casks with `auto_updates` or `version :latest` will not be upgraded" if args.empty?
         oh1 "Upgrading #{Formatter.pluralize(outdated_casks.length, "outdated package")}, with result:"
         puts outdated_casks.map { |f| "#{f.full_name} #{f.version}" } * ", "
 
         outdated_casks.each do |old_cask|
           odebug "Started upgrade process for Cask #{old_cask}"
-          raise CaskNotInstalledError, old_cask unless old_cask.installed? || force?
-
           raise CaskUnavailableError.new(old_cask, "The Caskfile is missing!") if old_cask.installed_caskfile.nil?
 
           old_cask = CaskLoader.load(old_cask.installed_caskfile)
@@ -52,6 +54,8 @@ module Hbc
           begin
             # Start new Cask's installation steps
             new_cask_installer.check_conflicts
+
+            new_cask_installer.print_caveats
 
             new_cask_installer.fetch
 
@@ -81,10 +85,6 @@ module Hbc
 
       def self.help
         "upgrades all outdated casks"
-      end
-
-      def self.needs_init?
-        true
       end
     end
   end

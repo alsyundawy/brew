@@ -450,10 +450,10 @@ module MachO
     # Fat binary header structure
     # @see MachO::FatArch
     class FatHeader < MachOStructure
-      # @return [Fixnum] the magic number of the header (and file)
+      # @return [Integer] the magic number of the header (and file)
       attr_reader :magic
 
-      # @return [Fixnum] the number of fat architecture structures following the header
+      # @return [Integer] the number of fat architecture structures following the header
       attr_reader :nfat_arch
 
       # always big-endian
@@ -475,25 +475,34 @@ module MachO
       def serialize
         [magic, nfat_arch].pack(FORMAT)
       end
+
+      # @return [Hash] a hash representation of this {FatHeader}
+      def to_h
+        {
+          "magic" => magic,
+          "magic_sym" => MH_MAGICS[magic],
+          "nfat_arch" => nfat_arch,
+        }.merge super
+      end
     end
 
     # Fat binary header architecture structure. A Fat binary has one or more of
     # these, representing one or more internal Mach-O blobs.
     # @see MachO::Headers::FatHeader
     class FatArch < MachOStructure
-      # @return [Fixnum] the CPU type of the Mach-O
+      # @return [Integer] the CPU type of the Mach-O
       attr_reader :cputype
 
-      # @return [Fixnum] the CPU subtype of the Mach-O
+      # @return [Integer] the CPU subtype of the Mach-O
       attr_reader :cpusubtype
 
-      # @return [Fixnum] the file offset to the beginning of the Mach-O data
+      # @return [Integer] the file offset to the beginning of the Mach-O data
       attr_reader :offset
 
-      # @return [Fixnum] the size, in bytes, of the Mach-O data
+      # @return [Integer] the size, in bytes, of the Mach-O data
       attr_reader :size
 
-      # @return [Fixnum] the alignment, as a power of 2
+      # @return [Integer] the alignment, as a power of 2
       attr_reader :align
 
       # always big-endian
@@ -508,7 +517,7 @@ module MachO
       # @api private
       def initialize(cputype, cpusubtype, offset, size, align)
         @cputype = cputype
-        @cpusubtype = cpusubtype
+        @cpusubtype = cpusubtype & ~CPU_SUBTYPE_MASK
         @offset = offset
         @size = size
         @align = align
@@ -518,29 +527,42 @@ module MachO
       def serialize
         [cputype, cpusubtype, offset, size, align].pack(FORMAT)
       end
+
+      # @return [Hash] a hash representation of this {FatArch}
+      def to_h
+        {
+          "cputype" => cputype,
+          "cputype_sym" => CPU_TYPES[cputype],
+          "cpusubtype" => cpusubtype,
+          "cpusubtype_sym" => CPU_SUBTYPES[cputype][cpusubtype],
+          "offset" => offset,
+          "size" => size,
+          "align" => align,
+        }.merge super
+      end
     end
 
     # 32-bit Mach-O file header structure
     class MachHeader < MachOStructure
-      # @return [Fixnum] the magic number
+      # @return [Integer] the magic number
       attr_reader :magic
 
-      # @return [Fixnum] the CPU type of the Mach-O
+      # @return [Integer] the CPU type of the Mach-O
       attr_reader :cputype
 
-      # @return [Fixnum] the CPU subtype of the Mach-O
+      # @return [Integer] the CPU subtype of the Mach-O
       attr_reader :cpusubtype
 
-      # @return [Fixnum] the file type of the Mach-O
+      # @return [Integer] the file type of the Mach-O
       attr_reader :filetype
 
-      # @return [Fixnum] the number of load commands in the Mach-O
+      # @return [Integer] the number of load commands in the Mach-O
       attr_reader :ncmds
 
-      # @return [Fixnum] the size of all load commands, in bytes, in the Mach-O
+      # @return [Integer] the size of all load commands, in bytes, in the Mach-O
       attr_reader :sizeofcmds
 
-      # @return [Fixnum] the header flags associated with the Mach-O
+      # @return [Integer] the header flags associated with the Mach-O
       attr_reader :flags
 
       # @see MachOStructure::FORMAT
@@ -635,9 +657,27 @@ module MachO
         Utils.magic64?(magic)
       end
 
-      # @return [Fixnum] the file's internal alignment
+      # @return [Integer] the file's internal alignment
       def alignment
         magic32? ? 4 : 8
+      end
+
+      # @return [Hash] a hash representation of this {MachHeader}
+      def to_h
+        {
+          "magic" => magic,
+          "magic_sym" => MH_MAGICS[magic],
+          "cputype" => cputype,
+          "cputype_sym" => CPU_TYPES[cputype],
+          "cpusubtype" => cpusubtype,
+          "cpusubtype_sym" => CPU_SUBTYPES[cputype][cpusubtype],
+          "filetype" => filetype,
+          "filetype_sym" => MH_FILETYPES[filetype],
+          "ncmds" => ncmds,
+          "sizeofcmds" => sizeofcmds,
+          "flags" => flags,
+          "alignment" => alignment,
+        }.merge super
       end
     end
 
@@ -659,6 +699,13 @@ module MachO
                      flags, reserved)
         super(magic, cputype, cpusubtype, filetype, ncmds, sizeofcmds, flags)
         @reserved = reserved
+      end
+
+      # @return [Hash] a hash representation of this {MachHeader64}
+      def to_h
+        {
+          "reserved" => reserved,
+        }.merge super
       end
     end
   end

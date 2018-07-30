@@ -103,17 +103,17 @@ describe Hbc::CLI::Uninstall, :cask do
         [last_installed_version,  "456000"],
       ]
     }
-    let(:caskroom_path) { Hbc.caskroom.join(token).tap(&:mkpath) }
+    let(:caskroom_path) { Hbc::Caskroom.path.join(token).tap(&:mkpath) }
 
     before do
       timestamped_versions.each do |timestamped_version|
         caskroom_path.join(".metadata", *timestamped_version, "Casks").tap(&:mkpath)
                      .join("#{token}.rb").open("w") do |caskfile|
-                       caskfile.puts <<~EOS
+                       caskfile.puts <<~RUBY
                          cask '#{token}' do
                            version '#{timestamped_version[0]}'
                          end
-                       EOS
+                       RUBY
                      end
         caskroom_path.join(timestamped_version[0]).mkpath
       end
@@ -143,7 +143,7 @@ describe Hbc::CLI::Uninstall, :cask do
 
   describe "when Casks in Taps have been renamed or removed" do
     let(:app) { Hbc::Config.global.appdir.join("ive-been-renamed.app") }
-    let(:caskroom_path) { Hbc.caskroom.join("ive-been-renamed").tap(&:mkpath) }
+    let(:caskroom_path) { Hbc::Caskroom.path.join("ive-been-renamed").tap(&:mkpath) }
     let(:saved_caskfile) { caskroom_path.join(".metadata", "latest", "timestamp", "Casks").join("ive-been-renamed.rb") }
 
     before do
@@ -155,13 +155,13 @@ describe Hbc::CLI::Uninstall, :cask do
 
       saved_caskfile.dirname.mkpath
 
-      IO.write saved_caskfile, <<~EOS
+      IO.write saved_caskfile, <<~RUBY
         cask 'ive-been-renamed' do
           version :latest
 
           app 'ive-been-renamed.app'
         end
-      EOS
+      RUBY
     end
 
     it "can still uninstall those Casks" do

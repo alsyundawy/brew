@@ -13,6 +13,8 @@ require "emoji"
 require "development_tools"
 require "cache_store"
 require "linkage_checker"
+require "install"
+require "messages"
 
 class FormulaInstaller
   include FormulaCellarChecks
@@ -153,8 +155,8 @@ class FormulaInstaller
 
     recursive_deps = formula.recursive_dependencies
     recursive_formulae = recursive_deps.map(&:to_formula)
-    recursive_runtime_deps = formula.runtime_dependencies
-    recursive_runtime_formulae = recursive_runtime_deps.map(&:to_formula)
+    recursive_runtime_formulae =
+      formula.runtime_formula_dependencies(undeclared: false)
 
     recursive_dependencies = []
     recursive_formulae.each do |dep|
@@ -172,7 +174,9 @@ class FormulaInstaller
       EOS
     end
 
-    if recursive_formulae.flat_map(&:recursive_dependencies).map(&:to_s).include?(formula.name)
+    if recursive_formulae.flat_map(&:recursive_dependencies)
+                         .map(&:to_s)
+                         .include?(formula.name)
       raise CannotInstallFormulaError, <<~EOS
         #{formula.full_name} contains a recursive dependency on itself!
       EOS
@@ -219,6 +223,11 @@ class FormulaInstaller
   end
 
   def install
+    start_time = Time.now
+    if !formula.bottle_unneeded? && !pour_bottle? && DevelopmentTools.installed?
+      Homebrew::Install.check_development_tools
+    end
+
     # not in initialize so upgrade can unlink the active keg before calling this
     # function but after instantiating this class so that it can avoid having to
     # relink the active keg if possible (because it is slow).
@@ -343,6 +352,8 @@ class FormulaInstaller
     build_bottle_postinstall if build_bottle?
 
     opoo "Nothing was installed to #{formula.prefix}" unless formula.installed?
+    end_time = Time.now
+    Homebrew.messages.formula_installed(formula, end_time - start_time)
   end
 
   def check_conflicts
@@ -422,7 +433,7 @@ class FormulaInstaller
   end
 
   def runtime_requirements(formula)
-    runtime_deps = formula.runtime_dependencies.map(&:to_formula)
+    runtime_deps = formula.runtime_formula_dependencies(undeclared: false)
     recursive_requirements = formula.recursive_requirements do |dependent, _|
       Requirement.prune unless runtime_deps.include?(dependent)
     end
@@ -431,8 +442,12 @@ class FormulaInstaller
 
   def expand_requirements
     unsatisfied_reqs = Hash.new { |h, k| h[k] = [] }
-    deps = []
+    req_deps = []
     formulae = [formula]
+    formula_deps_map = Dependency.expand(formula)
+                                 .each_with_object({}) do |dep, hash|
+      hash[dep.name] = dep
+    end
 
     while f = formulae.pop
       runtime_requirements = runtime_requirements(f)
@@ -448,6 +463,8 @@ class FormulaInstaller
           next
         elsif !runtime_requirements.include?(req) && install_bottle_for_dependent
           Requirement.prune
+        elsif (dep = formula_deps_map[dependent.name]) && dep.build?
+          Requirement.prune
         else
           unsatisfied_reqs[dependent] << req
         end
@@ -455,13 +472,14 @@ class FormulaInstaller
     end
 
     # Merge the repeated dependencies, which may have different tags.
-    deps = Dependency.merge_repeats(deps)
+    req_deps = Dependency.merge_repeats(req_deps)
 
-    [unsatisfied_reqs, deps]
+    [unsatisfied_reqs, req_deps]
   end
 
   def expand_dependencies(deps)
     inherited_options = Hash.new { |hash, key| hash[key] = Options.new }
+    pour_bottle = pour_bottle?
 
     expanded_deps = Dependency.expand(formula, deps) do |dependent, dep|
       inherited_options[dep.name] |= inherited_options_for(dep)
@@ -469,6 +487,7 @@ class FormulaInstaller
         dependent,
         inherited_options.fetch(dependent.name, []),
       )
+      pour_bottle = true if install_bottle_for?(dep.to_formula, build)
 
       if dep.prune_from_option?(build)
         Dependency.prune
@@ -481,6 +500,16 @@ class FormulaInstaller
       elsif dep.satisfied?(inherited_options[dep.name])
         Dependency.skip
       end
+    end
+
+    if pour_bottle
+      bottle_deps = Keg.relocation_formulae
+                       .map { |formula| Dependency.new(formula) }
+                       .reject do |dep|
+        inherited_options[dep.name] |= inherited_options_for(dep)
+        dep.satisfied? inherited_options[dep.name]
+      end
+      expanded_deps = Dependency.merge_repeats(bottle_deps + expanded_deps) unless bottle_deps.empty?
     end
 
     expanded_deps.map { |dep| [dep, inherited_options[dep.name]] }
@@ -581,6 +610,7 @@ class FormulaInstaller
     return if caveats.empty?
     @show_summary_heading = true
     ohai "Caveats", caveats.to_s
+    Homebrew.messages.record_caveats(formula, caveats)
   end
 
   def finish
@@ -604,16 +634,18 @@ class FormulaInstaller
       post_install
     end
 
-    caveats
-
-    ohai "Summary" if verbose? || show_summary_heading?
-    puts summary
-
     # Updates the cache for a particular formula after doing an install
     CacheStoreDatabase.use(:linkage) do |db|
       break unless db.created?
-      LinkageChecker.new(keg, formula, cache_db: db)
+      LinkageChecker.new(keg, formula, cache_db: db, rebuild_cache: true)
     end
+
+    # Update tab with actual runtime dependencies
+    tab = Tab.for_keg(keg)
+    Tab.clear_cache
+    f_runtime_deps = formula.runtime_dependencies(read_from_tab: false)
+    tab.runtime_dependencies = Tab.runtime_deps_hash(f_runtime_deps)
+    tab.write
 
     # let's reset Utils.git_available? if we just installed git
     Utils.clear_git_available_cache if formula.name == "git"
@@ -623,6 +655,11 @@ class FormulaInstaller
        !DevelopmentTools.curl_handles_most_https_certificates?
       ENV["HOMEBREW_CURL"] = formula.opt_bin/"curl"
     end
+
+    caveats
+
+    ohai "Summary" if verbose? || show_summary_heading?
+    puts summary
   ensure
     unlock
   end
@@ -692,7 +729,7 @@ class FormulaInstaller
     args = %W[
       nice #{RUBY_PATH}
       -W0
-      -I #{HOMEBREW_LOAD_PATH}
+      -I #{$LOAD_PATH.join(File::PATH_SEPARATOR)}
       --
       #{HOMEBREW_LIBRARY_PATH}/build.rb
       #{formula.specified_path}
@@ -710,6 +747,8 @@ class FormulaInstaller
         sandbox.allow_write_path(ENV["HOME"]) if ARGV.interactive?
         sandbox.allow_write_temp_and_cache
         sandbox.allow_write_log(formula)
+        sandbox.allow_cvs
+        sandbox.allow_fossil
         sandbox.allow_write_xcode
         sandbox.allow_write_cellar(formula)
         sandbox.exec(*args)
@@ -847,11 +886,11 @@ class FormulaInstaller
     args = %W[
       nice #{RUBY_PATH}
       -W0
-      -I #{HOMEBREW_LOAD_PATH}
+      -I #{$LOAD_PATH.join(File::PATH_SEPARATOR)}
       --
       #{HOMEBREW_LIBRARY_PATH}/postinstall.rb
       #{formula.path}
-    ].concat(ARGV.options_only)
+    ].concat(ARGV.options_only) - ["--HEAD", "--devel"]
 
     if formula.head?
       args << "--HEAD"

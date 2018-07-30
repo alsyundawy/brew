@@ -43,7 +43,7 @@ require "utils/curl"
 require "extend/ENV"
 require "formula_cellar_checks"
 require "cmd/search"
-require "cmd/style"
+require "style"
 require "date"
 require "missing_formula"
 require "digest"
@@ -53,7 +53,7 @@ module Homebrew
   module_function
 
   def audit
-    args = Homebrew::CLI::Parser.parse do
+    Homebrew::CLI::Parser.parse do
       switch      "--strict"
       switch      "--online"
       switch      "--new-formula"
@@ -116,7 +116,7 @@ module Homebrew
 
     options[:display_cop_names] = args.display_cop_names?
     # Check style in a single batch run up front for performance
-    style_results = check_style_json(files, options)
+    style_results = Style.check_style_json(files, options)
 
     new_formula_problem_lines = []
     ff.sort.each do |f|
@@ -143,8 +143,8 @@ module Homebrew
         if GitHub.create_issue_comment(new_formula_problem_lines.join("\n"))
           created_pr_comment = true
         end
-      rescue *GitHub.api_errors
-        nil
+      rescue *GitHub.api_errors => e
+        opoo "Unable to create issue comment: #{e.message}"
       end
     end
 
@@ -216,7 +216,7 @@ module Homebrew
 
     def initialize(formula, options = {})
       @formula = formula
-      @new_formula = options[:new_formula]
+      @new_formula = options[:new_formula] && !formula.versioned_formula?
       @strict = options[:strict]
       @online = options[:online]
       @display_cop_names = options[:display_cop_names]
@@ -236,6 +236,7 @@ module Homebrew
       return unless @style_offenses
       @style_offenses.each do |offense|
         if offense.cop_name.start_with?("NewFormulaAudit")
+          next if formula.versioned_formula?
           new_formula_problem offense.to_s(display_cop_name: @display_cop_names)
           next
         end
@@ -362,6 +363,7 @@ module Homebrew
       @specs.each do |spec|
         # Check for things we don't like to depend on.
         # We allow non-Homebrew installs whenever possible.
+        options_message = "Formulae should not have optional or recommended dependencies"
         spec.deps.each do |dep|
           begin
             dep_f = dep.to_formula
@@ -390,7 +392,7 @@ module Homebrew
 
           if @new_formula && dep_f.keg_only_reason &&
              !["openssl", "apr", "apr-util"].include?(dep.name) &&
-             [:provided_by_macos, :provided_by_osx].include?(dep_f.keg_only_reason.reason)
+             dep_f.keg_only_reason.reason == :provided_by_macos
             new_formula_problem "Dependency '#{dep.name}' may be unnecessary as it is provided by macOS; try to build this formula without it."
           end
 
@@ -416,11 +418,16 @@ module Homebrew
           end
 
           next unless @new_formula
-          next if formula.versioned_formula?
           next unless @official_tap
           if dep.tags.include?(:recommended) || dep.tags.include?(:optional)
-            new_formula_problem "Formulae should not have #{dep.tags} dependencies."
+            new_formula_problem options_message
           end
+        end
+
+        next unless @new_formula
+        next unless @official_tap
+        if spec.requirements.map(&:recommended?).any? || spec.requirements.map(&:optional?).any?
+          new_formula_problem options_message
         end
       end
     end
@@ -488,10 +495,29 @@ module Homebrew
       end
     end
 
-    def audit_bottle_spec
+    def audit_bottle_disabled
       return unless formula.bottle_disabled?
-      return if formula.bottle_disable_reason.valid?
-      problem "Unrecognized bottle modifier"
+      return if formula.bottle_unneeded?
+
+      if !formula.bottle_disable_reason.valid?
+        problem "Unrecognized bottle modifier"
+      else
+        bottle_disabled_whitelist = %w[
+          cryptopp
+          leafnode
+        ]
+        return if bottle_disabled_whitelist.include?(formula.name)
+        problem "Formulae should not use `bottle :disabled`" if @official_tap
+      end
+    end
+
+    def audit_bottle_spec
+      return unless @official_tap
+      return if @new_formula
+      return unless @online
+      return if formula.bottle_defined? || formula.bottle_disabled?
+      return if formula.name == "testbottest"
+      problem "`bottle` is not defined"
     end
 
     def audit_github_repository
@@ -515,9 +541,9 @@ module Homebrew
 
       new_formula_problem "GitHub fork (not canonical repository)" if metadata["fork"]
       if formula&.tap&.core_tap? &&
-         (metadata["forks_count"] < 20) && (metadata["subscribers_count"] < 20) &&
-         (metadata["stargazers_count"] < 50)
-        new_formula_problem "GitHub repository not notable enough (<20 forks, <20 watchers and <50 stars)"
+         (metadata["forks_count"] < 30) && (metadata["subscribers_count"] < 30) &&
+         (metadata["stargazers_count"] < 75)
+        new_formula_problem "GitHub repository not notable enough (<30 forks, <30 watchers and <75 stars)"
       end
 
       return if Date.parse(metadata["created_at"]) <= (Date.today - 30)
@@ -571,8 +597,35 @@ module Homebrew
         end
       end
 
-      if @new_formula && formula.head
-        new_formula_problem "Formulae should not have a HEAD spec"
+      if formula.head || formula.devel
+        unstable_spec_message = "Formulae should not have a `HEAD` or `devel` spec"
+        if @new_formula
+          new_formula_problem unstable_spec_message
+        elsif formula.versioned_formula?
+          versioned_unstable_spec = %w[
+            bash-completion@2
+            imagemagick@6
+            openssl@1.1
+            python@2
+          ]
+          problem unstable_spec_message unless versioned_unstable_spec.include?(formula.name)
+        end
+      end
+
+      throttled = %w[
+        aws-sdk-cpp 10
+        awscli 10
+        heroku 10
+        quicktype 10
+        vim 50
+      ]
+
+      throttled.each_slice(2).to_a.map do |a, b|
+        next if formula.stable.nil?
+        version = formula.stable.version.to_s.split(".").last.to_i
+        if @strict && a == formula.name && version.modulo(b.to_i).nonzero?
+          problem "should only be updated every #{b} releases on multiples of #{b}"
+        end
       end
 
       unstable_whitelist = %w[
@@ -678,7 +731,7 @@ module Homebrew
         next if spec_version >= max_version
 
         above_max_version_scheme = current_version_scheme > max_version_scheme
-        map_includes_version = spec_version_scheme_map.keys.include?(spec_version)
+        map_includes_version = spec_version_scheme_map.key?(spec_version)
         next if !current_version_scheme.zero? &&
                 (above_max_version_scheme || map_includes_version)
         problem "#{spec} version should not decrease (from #{max_version} to #{spec_version})"

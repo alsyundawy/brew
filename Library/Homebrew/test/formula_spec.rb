@@ -771,6 +771,20 @@ describe Formula do
 
       expect(formula.runtime_dependencies.map(&:name)).to eq [dependency.name]
     end
+
+    it "handles bad tab runtime_dependencies" do
+      formula = Class.new(Testball).new
+
+      formula.brew { formula.install }
+      tab = Tab.create(formula, DevelopmentTools.default_compiler, :libcxx)
+      tab.runtime_dependencies = ["foo"]
+      tab.write
+
+      keg = Keg.for(formula.installed_prefix)
+      keg.link
+
+      expect(formula.runtime_dependencies.map(&:name)).to be_empty
+    end
   end
 
   specify "requirements" do
@@ -1285,6 +1299,17 @@ describe Formula do
           expect(f.outdated_kegs(fetch_head: true)).to be_empty
         ensure
           testball_repo.rmtree if testball_repo.exist?
+        end
+      end
+    end
+
+    describe "#mkdir" do
+      let(:dst) { mktmpdir }
+
+      it "creates intermediate directories" do
+        f.mkdir dst/"foo/bar/baz" do
+          expect(dst/"foo/bar/baz").to exist, "foo/bar/baz was not created"
+          expect(dst/"foo/bar/baz").to be_a_directory, "foo/bar/baz was not a directory structure"
         end
       end
     end

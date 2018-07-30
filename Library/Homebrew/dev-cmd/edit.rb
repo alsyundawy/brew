@@ -22,7 +22,7 @@ module Homebrew
         Changes will be lost!
         The first time you `brew update', all local changes will be lost, you should
         thus `brew update' before you `brew edit'!
-        EOS
+      EOS
     end
 
     # If no brews are listed, open the project root in an editor.
@@ -43,7 +43,7 @@ module Homebrew
       paths = ARGV.named.map do |name|
         path = Formulary.path(name)
 
-        raise FormulaUnavailableError, name unless path.file? || Homebrew.args.force?
+        raise FormulaUnavailableError, name unless path.file? || args.force?
 
         path
       end

@@ -1,10 +1,14 @@
+require "hbc/cask_loader"
+require "hbc/config"
 require "hbc/dsl"
 require "hbc/metadata"
+require "searchable"
 
 module Hbc
   class Cask
     extend Enumerable
     extend Forwardable
+    extend Searchable
     include Metadata
 
     attr_reader :token, :sourcefile_path, :config
@@ -13,7 +17,11 @@ module Hbc
       return to_enum unless block_given?
 
       Tap.flat_map(&:cask_files).each do |f|
-        yield CaskLoader::FromTapPathLoader.new(f).load
+        begin
+          yield CaskLoader::FromTapPathLoader.new(f).load
+        rescue CaskUnreadableError => e
+          opoo e.message
+        end
       end
     end
 
@@ -52,12 +60,8 @@ module Hbc
     end
 
     def full_name
-      return token if tap == Hbc.default_tap
-      qualified_token
-    end
-
-    def qualified_token
       return token if tap.nil?
+      return token if tap.user == "Homebrew"
       "#{tap.name}/#{token}"
     end
 
@@ -128,6 +132,33 @@ module Hbc
       ].each do |method|
         odebug "Cask instance method '#{method}':", send(method).to_yaml
       end
+    end
+
+    def to_h
+      {
+        "name" => name,
+        "homepage" => homepage,
+        "url" => url,
+        "appcast" => appcast,
+        "version" => version,
+        "sha256" => sha256,
+        "artifacts" => artifacts.map do |a|
+          if a.respond_to? :to_h
+            a.to_h
+          elsif a.respond_to? :to_a
+            a.to_a
+          else
+            a
+          end
+        end,
+        "caveats" => caveats,
+        "depends_on" => depends_on,
+        "conflicts_with" => conflicts_with.to_a,
+        "container" => container,
+        "gpg" => gpg,
+        "accessibility_access" => accessibility_access,
+        "auto_updates" => auto_updates,
+      }
     end
   end
 end

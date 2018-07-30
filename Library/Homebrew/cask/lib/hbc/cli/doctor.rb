@@ -60,15 +60,13 @@ module Hbc
       def check_staging_location
         ohai "Homebrew-Cask Staging Location"
 
-        path = Pathname.new(user_tilde(Hbc.caskroom.to_s))
+        path = Caskroom.path
 
-        if !path.exist?
-          add_error "The staging path #{path} does not exist."
-        elsif !path.writable?
-          add_error "The staging path #{path} is not writable by the current user."
+        if path.exist? && !path.writable?
+          add_error "The staging path #{user_tilde(path.to_s)} is not writable by the current user."
         end
 
-        puts path
+        puts user_tilde(path.to_s)
       end
 
       def check_cached_downloads
@@ -77,19 +75,17 @@ module Hbc
         cleanup = CLI::Cleanup.new
         count = cleanup.cache_files.count
         size = cleanup.disk_cleanup_size
-        msg = user_tilde(Hbc.cache.to_s)
+        msg = user_tilde(Cache.path.to_s)
         msg << " (#{number_readable(count)} files, #{disk_usage_readable(size)})" unless count.zero?
         puts msg
       end
 
       def check_taps
+        default_tap = Tap.default_cask_tap
+        alt_taps = Tap.select { |t| t.cask_dir.exist? && t != default_tap }
+
         ohai "Homebrew-Cask Taps:"
-
-        default_tap = [Hbc.default_tap]
-
-        alt_taps = Tap.select { |t| t.cask_dir.exist? && t != Hbc.default_tap }
-
-        (default_tap + alt_taps).each do |tap|
+        [default_tap, *alt_taps].each do |tap|
           if tap.path.nil? || tap.path.to_s.empty?
             puts none_string
           else
@@ -169,13 +165,8 @@ module Hbc
         Formatter.error("(#{string})")
       end
 
-      def self.render_with_none(string)
-        return string if !string.nil? && string.respond_to?(:to_s) && !string.to_s.empty?
-        none_string
-      end
-
       def self.alt_taps
-        Tap.select { |t| t.cask_dir.exist? && t != Hbc.default_tap }
+        Tap.select { |t| t.cask_dir.exist? && t != Tap.default_cask_tap }
       end
 
       def self.cask_count_for_tap(tap)
@@ -183,16 +174,6 @@ module Hbc
       rescue StandardError
         add_error "Unable to read from Tap: #{tap.path}"
         "0"
-      end
-
-      def self.render_taps(*taps)
-        taps.collect do |tap|
-          if tap.path.nil? || tap.path.to_s.empty?
-            none_string
-          else
-            "#{tap.path} (#{cask_count_for_tap(tap)})"
-          end
-        end
       end
 
       def self.render_env_var(var)
@@ -203,46 +184,6 @@ module Hbc
 
       def self.user_tilde(path)
         path.gsub(ENV["HOME"], "~")
-      end
-
-      # This could be done by calling into Homebrew, but the situation
-      # where "doctor" is needed is precisely the situation where such
-      # things are less dependable.
-      def self.render_install_location
-        locations = Dir.glob(HOMEBREW_CELLAR.join("brew-cask", "*")).reverse
-        if locations.empty?
-          none_string
-        else
-          locations.collect do |l|
-            "#{l} #{error_string 'error: legacy install. Run "brew uninstall --force brew-cask".'}"
-          end
-        end
-      end
-
-      def self.render_staging_location(path)
-        path = Pathname.new(user_tilde(path.to_s))
-        if !path.exist?
-          "#{path} #{error_string "error: path does not exist"}"
-        elsif !path.writable?
-          "#{path} #{error_string "error: not writable by current user"}"
-        else
-          path
-        end
-      end
-
-      def self.render_load_path(paths)
-        paths.map(&method(:user_tilde))
-        return "#{none_string} #{error_string}" if [*paths].empty?
-        paths
-      end
-
-      def self.render_cached_downloads
-        cleanup = CLI::Cleanup.new
-        count = cleanup.cache_files.count
-        size = cleanup.disk_cleanup_size
-        msg = user_tilde(Hbc.cache.to_s)
-        msg << " (#{number_readable(count)} files, #{disk_usage_readable(size)})" unless count.zero?
-        msg
       end
 
       def self.help

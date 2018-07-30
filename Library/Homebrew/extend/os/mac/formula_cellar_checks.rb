@@ -7,7 +7,7 @@ module FormulaCellarChecks
       formula.name.start_with?(formula_name)
     end
 
-    return if formula.name =~ /^php(@?\d+\.?\d*?)?$/
+    return if formula.name =~ Version.formula_optionally_versioned_regex(:php)
 
     return if MacOS.version < :mavericks && formula.name.start_with?("postgresql")
     return if MacOS.version < :yosemite  && formula.name.start_with?("memcached")
@@ -67,9 +67,7 @@ module FormulaCellarChecks
     keg = Keg.new(formula.prefix)
 
     CacheStoreDatabase.use(:linkage) do |db|
-      checker = LinkageChecker.new(
-        keg, formula, cache_db: db, use_cache: !ENV["HOMEBREW_LINKAGE_CACHE"].nil?
-      )
+      checker = LinkageChecker.new(keg, formula, cache_db: db)
       next unless checker.broken_library_linkage?
 
       output = <<~EOS

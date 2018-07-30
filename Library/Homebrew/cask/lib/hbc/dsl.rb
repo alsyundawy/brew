@@ -2,6 +2,9 @@ require "locale"
 
 require "hbc/artifact"
 
+require "hbc/caskroom"
+require "hbc/exceptions"
+
 require "hbc/dsl/appcast"
 require "hbc/dsl/base"
 require "hbc/dsl/caveats"
@@ -15,6 +18,8 @@ require "hbc/dsl/stanza_proxy"
 require "hbc/dsl/uninstall_postflight"
 require "hbc/dsl/uninstall_preflight"
 require "hbc/dsl/version"
+
+require "hbc/url"
 
 module Hbc
   class DSL
@@ -134,9 +139,7 @@ module Hbc
       end
 
       MacOS.languages.map(&Locale.method(:parse)).each do |locale|
-        key = @language_blocks.keys.detect do |strings|
-          strings.any? { |string| locale.include?(string) }
-        end
+        key = locale.detect(@language_blocks.keys)
 
         next if key.nil?
 
@@ -169,16 +172,8 @@ module Hbc
     end
 
     def container(*args)
-      # TODO: remove this constraint, and instead merge multiple container stanzas
       set_unique_stanza(:container, args.empty?) do
-        begin
-          DSL::Container.new(*args).tap do |container|
-            # TODO: remove this backward-compatibility section after removing nested_container
-            if container&.nested
-              artifacts.add(Artifact::NestedContainer.new(cask, container.nested))
-            end
-          end
-        end
+        DSL::Container.new(*args)
       end
     end
 
@@ -222,7 +217,7 @@ module Hbc
     end
 
     def caskroom_path
-      @caskroom_path ||= Hbc.caskroom.join(token)
+      @caskroom_path ||= Caskroom.path.join(token)
     end
 
     def staged_path

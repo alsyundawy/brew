@@ -28,6 +28,18 @@ describe RuboCop::Cop::NewFormulaAudit::DependencyOrder do
       RUBY
     end
 
+    it "supports requirement constants" do
+      expect_offense(<<~RUBY)
+        class Foo < Formula
+          homepage "http://example.com"
+          url "http://example.com/foo-1.0.tgz"
+          depends_on FooRequirement
+          depends_on "bar"
+          ^^^^^^^^^^^^^^^^ dependency "bar" (line 5) should be put before dependency "FooRequirement" (line 4)
+        end
+      RUBY
+    end
+
     it "wrong conditional depends_on order" do
       expect_offense(<<~RUBY)
         class Foo < Formula
@@ -62,23 +74,23 @@ describe RuboCop::Cop::NewFormulaAudit::DependencyOrder do
 
   context "autocorrect" do
     it "wrong conditional depends_on order" do
-      source = <<~EOS
+      source = <<~RUBY
         class Foo < Formula
           homepage "http://example.com"
           url "http://example.com/foo-1.0.tgz"
           depends_on "apple" if build.with? "foo"
           depends_on "foo" => :optional
         end
-      EOS
+      RUBY
 
-      correct_source = <<~EOS
+      correct_source = <<~RUBY
         class Foo < Formula
           homepage "http://example.com"
           url "http://example.com/foo-1.0.tgz"
           depends_on "foo" => :optional
           depends_on "apple" if build.with? "foo"
         end
-      EOS
+      RUBY
 
       corrected_source = autocorrect_source(source)
       expect(corrected_source).to eq(correct_source)

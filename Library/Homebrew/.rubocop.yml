@@ -3,7 +3,8 @@ inherit_from:
 
 AllCops:
   Include:
-    - '**/.simplecov'
+    - '**/*.rb'
+    - 'Library/Homebrew/.simplecov'
   Exclude:
     - 'bin/*'
     - '**/Casks/**/*'
@@ -12,6 +13,10 @@ AllCops:
 Layout/MultilineMethodCallIndentation:
   Exclude:
     - '**/*_spec.rb'
+
+# Gets false positives with our heredocs nested inside arrays
+Layout/ClosingHeredocIndentation:
+  Enabled: false
 
 # so many of these in formulae but none in here
 Lint/AmbiguousRegexpLiteral:
@@ -25,6 +30,9 @@ Lint/NestedMethodDefinition:
 # so many of these in formulae but none in here
 Lint/ParenthesesAsGroupedExpression:
   Enabled: true
+
+Lint/UnusedMethodArgument:
+  AllowUnusedKeywordArguments: true
 
 # TODO: try to bring down all metrics maximums
 Metrics/AbcSize:
@@ -72,6 +80,11 @@ Naming/PredicateName:
 Naming/UncommunicativeMethodParamName:
   Enabled: false
 
+# Avoid false positives on modifiers used on symbols of methods
+# See https://github.com/rubocop-hq/rubocop/issues/5953
+Style/AccessModifierDeclarations:
+  Enabled: false
+
 Style/BlockDelimiters:
   Exclude:
     - '**/*_spec.rb'
@@ -88,7 +101,3 @@ Style/HashSyntax:
 # so many of these in formulae but none in here
 Style/TrailingBodyOnMethodDefinition:
   Enabled: true
-
-Rspec/ExpectActual:
-  Exclude:
-    - 'test/missing_formula_spec.rb'

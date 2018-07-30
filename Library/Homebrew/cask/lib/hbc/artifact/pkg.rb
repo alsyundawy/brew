@@ -1,8 +1,9 @@
+require "vendor/plist/plist"
+
 require "hbc/artifact/abstract_artifact"
 
-require "hbc/utils/hash_validator"
-
-require "vendor/plist/plist"
+require "extend/hash_validator"
+using HashValidator
 
 module Hbc
   module Artifact
@@ -10,9 +11,7 @@ module Hbc
       attr_reader :pkg_relative_path
 
       def self.from_args(cask, path, **stanza_options)
-        stanza_options.extend(HashValidator).assert_valid_keys(
-          :allow_untrusted, :choices
-        )
+        stanza_options.assert_valid_keys!(:allow_untrusted, :choices)
         new(cask, path, **stanza_options)
       end
 
@@ -50,7 +49,13 @@ module Hbc
         end
         with_choices_file do |choices_path|
           args << "-applyChoiceChangesXML" << choices_path if choices_path
-          command.run!("/usr/sbin/installer", sudo: true, args: args, print_stdout: true)
+          logged_in_user = Utils.current_user
+          env = {
+            "LOGNAME" => logged_in_user,
+            "USER" => logged_in_user,
+            "USERNAME" => logged_in_user,
+          }
+          command.run!("/usr/sbin/installer", sudo: true, args: args, print_stdout: true, env: env)
         end
       end
 

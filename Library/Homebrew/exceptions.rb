@@ -1,3 +1,5 @@
+require "shellwords"
+
 class UsageError < RuntimeError
   attr_reader :reason
 
@@ -282,7 +284,7 @@ class OperationInProgressError < RuntimeError
       Operation already in progress for #{name}
       Another active Homebrew process is already using #{name}.
       Please wait for it to finish or terminate it to continue.
-      EOS
+    EOS
 
     super message
   end
@@ -333,7 +335,7 @@ class FormulaConflictError < RuntimeError
       link the formula again after the install finishes. You can --force this
       install, but the build may fail or cause obscure side-effects in the
       resulting software.
-      EOS
+    EOS
     message.join("\n")
   end
 end
@@ -498,7 +500,7 @@ class DownloadError < RuntimeError
     super <<~EOS
       Failed to download resource #{resource.download_name.inspect}
       #{cause.message}
-      EOS
+    EOS
     set_backtrace(cause.backtrace)
   end
 end
@@ -524,9 +526,24 @@ end
 
 # raised by safe_system in utils.rb
 class ErrorDuringExecution < RuntimeError
-  def initialize(cmd, args = [])
-    args = args.map { |a| a.to_s.gsub " ", "\\ " }.join(" ")
-    super "Failure while executing: #{cmd} #{args}"
+  def initialize(cmd, status:, output: nil)
+    s = "Failure while executing; `#{cmd.shelljoin.gsub(/\\=/, "=")}` exited with #{status.exitstatus}."
+
+    unless [*output].empty?
+      format_output_line = lambda do |type, line|
+        if type == :stderr
+          Formatter.error(line)
+        else
+          line
+        end
+      end
+
+      s << " Here's the output:\n"
+      s << output.map(&format_output_line).join
+      s << "\n" unless s.end_with?("\n")
+    end
+
+    super s
   end
 end
 
@@ -547,7 +564,7 @@ class ChecksumMismatchError < RuntimeError
       Actual: #{actual}
       Archive: #{fn}
       To retry an incomplete download, remove the file above.
-      EOS
+    EOS
   end
 end
 

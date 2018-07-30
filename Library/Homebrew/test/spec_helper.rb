@@ -14,10 +14,9 @@ require "rubocop"
 require "rubocop/rspec/support"
 require "find"
 
-$LOAD_PATH.unshift(File.expand_path("#{ENV["HOMEBREW_LIBRARY"]}/Homebrew"))
-$LOAD_PATH.unshift(File.expand_path("#{ENV["HOMEBREW_LIBRARY"]}/Homebrew/test/support/lib"))
+$LOAD_PATH.push(File.expand_path("#{ENV["HOMEBREW_LIBRARY"]}/Homebrew/test/support/lib"))
 
-require "global"
+require_relative "../global"
 
 require "test/support/no_seed_progress_formatter"
 require "test/support/helper/fixtures"
@@ -44,6 +43,8 @@ RSpec.configure do |config|
   config.raise_errors_for_deprecations!
 
   config.filter_run_when_matching :focus
+
+  config.silence_filter_announcements = true
 
   # TODO: when https://github.com/rspec/rspec-expectations/pull/1056
   #       makes it into a stable release:
@@ -95,6 +96,8 @@ RSpec.configure do |config|
     end
 
     begin
+      Tap.clear_cache
+
       TEST_DIRECTORIES.each(&:mkpath)
 
       @__homebrew_failed = Homebrew.failed?
@@ -163,3 +166,4 @@ end
 
 RSpec::Matchers.define_negated_matcher :not_to_output, :output
 RSpec::Matchers.alias_matcher :have_failed, :be_failed
+RSpec::Matchers.alias_matcher :a_string_containing, :include
