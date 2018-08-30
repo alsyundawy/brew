@@ -50,18 +50,19 @@ With `--verbose` or `-v`, many commands print extra debugging information. Note 
   * `cat` `formula`:
     Display the source to `formula`.
 
-  * `cleanup` [`--prune=``days`] [`--dry-run`] [`-s`] [`formulae`]:
-    For all installed or specific formulae, remove any older versions from the
-    cellar. In addition, old downloads from the Homebrew download-cache are deleted.
+  * `cleanup` [`--prune=``days`] [`--dry-run`] [`-s`] [<formula/cask> ...]:
+    Remove stale lock files and outdated downloads for formulae and casks,
+    and remove old versions of installed formulae. If arguments are specified,
+    only do this for the specified formulae and casks.
 
     If `--prune=``days` is specified, remove all cache files older than `days`.
 
     If `--dry-run` or `-n` is passed, show what would be removed, but do not
     actually remove anything.
 
-    If `-s` is passed, scrub the cache, removing downloads for even the latest
-    versions of formulae. Note downloads for any installed formulae will still not be
-    deleted. If you want to delete those too: `rm -rf $(brew --cache)`
+    If `-s` is passed, scrub the cache, including downloads for even the latest
+    versions. Note downloads for any installed formula or cask will still not
+    be deleted. If you want to delete those too: `rm -rf $(brew --cache)`
 
   * `command` `cmd`:
     Display the path to the file which is used when invoking `brew` `cmd`.
@@ -575,7 +576,7 @@ With `--verbose` or `-v`, many commands print extra debugging information. Note 
     Options for the `install` command are also valid here.
 
     If `--cleanup` is specified or `HOMEBREW_UPGRADE_CLEANUP` is set then remove
-    previously installed `formula` version(s).
+    previously installed version(s) of upgraded `formulae`.
 
     If `--fetch-HEAD` is passed, fetch the upstream repository to detect if
     the HEAD installation of the formula is outdated. Otherwise, the
@@ -789,6 +790,18 @@ With `--verbose` or `-v`, many commands print extra debugging information. Note 
   * `edit` `formula`:
     Open `formula` in the editor.
 
+  * `extract` [`--force`] `formula` `tap` [`--version=``version`]:
+    Looks through repository history to find the `version` of `formula` and
+    creates a copy in `tap`/Formula/`formula`@`version`.rb. If the tap is
+    not installed yet, attempts to install/clone the tap before continuing.
+
+    If `--force` is passed, the file at the destination will be overwritten
+    if it already exists. Otherwise, existing files will be preserved.
+
+    If an argument is passed through `--version`, `version` of `formula`
+    will be extracted and placed in the destination tap. Otherwise, the most
+    recent version that can be found will be used.
+
   * `formula` `formula`:
     Display the path where `formula` is located.
 
@@ -799,8 +812,8 @@ With `--verbose` or `-v`, many commands print extra debugging information. Note 
     If `--pry` is passed or HOMEBREW_PRY is set, pry will be
     used instead of irb.
 
-  * `linkage` [`--test`] [`--reverse`] `formula`:
-    Checks the library links of an installed formula.
+  * `linkage` [`--test`] [`--reverse`] [`formulae`]:
+    Checks the library links of installed formulae.
 
     Only works on installed formulae. An error is raised if it is run on
     uninstalled formulae.
@@ -810,6 +823,8 @@ With `--verbose` or `-v`, many commands print extra debugging information. Note 
 
     If `--reverse` is passed, print the dylib followed by the binaries
     which link to it for each library the keg references.
+
+    If `formulae` are given, check linkage for only the specified brews.
 
   * `man` [`--fail-if-changed`]:
     Generate Homebrew's manpages.
@@ -964,9 +979,9 @@ With `--verbose` or `-v`, many commands print extra debugging information. Note 
 
   
 
-      `brew bundle check` [`--no-upgrade`] [`--file`=`path`|`--global`]
+      `brew bundle check` [`--no-upgrade`] [`--file`=`path`|`--global`] [`--verbose`]
 
-      Check if all dependencies are installed in a Brewfile.
+      Check if all dependencies are installed in a Brewfile. Missing dependencies are listed in verbose mode. `check` will exit on the first category missing a dependency unless in verbose mode.
 
   
 
@@ -995,6 +1010,10 @@ With `--verbose` or `-v`, many commands print extra debugging information. Note 
   
 
       If `--force` is passed, uninstall dependencies or overwrite an existing Brewfile.
+
+  
+
+      If `--zap` is passed, casks will be removed using the `zap` command instead of `uninstall`.
 
   
 
@@ -1105,7 +1124,10 @@ can take several different forms:
 Note that environment variables must have a value set to be detected. For example, `export HOMEBREW_NO_INSECURE_REDIRECT=1` rather than just `export HOMEBREW_NO_INSECURE_REDIRECT`.
 
   * `HOMEBREW_ARTIFACT_DOMAIN`:
-    If set, instructs Homebrew to use the given URL as a download mirror for bottles and binaries.
+    If set, instructs Homebrew to prefix all download URLs, including those
+    for bottles, with this variable. For example, a formula with a URL of
+    `https://example.com/foo.tar.gz` but `HOMEBREW_ARTIFACT_DOMAIN=http://localhost:8080`
+    would instead download from `http://localhost:8080/example.com/foo.tar.gz`.
 
   * `HOMEBREW_AUTO_UPDATE_SECS`:
     If set, Homebrew will only check for autoupdates once per this seconds interval.
@@ -1116,12 +1138,15 @@ Note that environment variables must have a value set to be detected. For exampl
     When using the `S3` download strategy, Homebrew will look in
     these variables for access credentials (see
     <https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-getting-started.html#cli-environment>
-    to retrieve these access credentials from AWS).  If they are not set,
+    to retrieve these access credentials from AWS). If they are not set,
     the `S3` download strategy will download with a public
     (unsigned) URL.
 
   * `HOMEBREW_BOTTLE_DOMAIN`:
-    If set, instructs Homebrew to use the given URL as a download mirror for bottles.
+    By default, Homebrew uses `https://homebrew.bintray.com/` as its download
+    mirror for bottles. If set, instructs Homebrew to instead use the given
+    URL. For example, `HOMEBREW_BOTTLE_DOMAIN=http://localhost:8080` will
+    cause all bottles to download from the prefix `http://localhost:8080/`.
 
   * `HOMEBREW_BROWSER`:
     If set, uses this setting as the browser when opening project homepages,
@@ -1305,13 +1330,15 @@ Homebrew Documentation: <https://docs.brew.sh>
 
 Homebrew's lead maintainer is Mike McQuaid.
 
-Homebrew/homebrew-core's lead maintainer is ilovezfs.
+Homebrew's project leadership committee is Mike McQuaid, JCount, Misty De Meo and Markus Reiter.
 
-Homebrew/brew's other current maintainers are ilovezfs, JCount, Misty De Meo, Gautham Goli, Markus Reiter and William Woodruff.
+Homebrew/brew's other current maintainers are Dominyk Tiller, Claudia, Michka Popoff, Shaun Jackman, Chongyu Zhu, commitay, Vitor Galvao, JCount, Misty De Meo, Gautham Goli, Markus Reiter, Jonathan Chang and William Woodruff.
 
-Homebrew/homebrew-core's other current maintainers are FX Coudert, JCount, Misty De Meo and Tom Schoonjans.
+Homebrew/brew's Linux support (and Linuxbrew) maintainers are Michka Popoff and Shaun Jackman.
 
-Former maintainers with significant contributions include Tim Smith, Baptiste Fontaine, Xu Cheng, Martin Afanasjew, Dominyk Tiller, Brett Koonce, Charlie Sharpsteen, Jack Nagel, Adam Vandenberg, Andrew Janke, Alex Dunn, neutric, Tomasz Pajor, Uladzislau Shablinski, Alyssa Ross,  and Homebrew's creator: Max Howell.
+Homebrew/homebrew-core's other current maintainers are Dominyk Tiller, Claudia, Michka Popoff, Shaun Jackman, Chongyu Zhu, commitay, Izaak Beekman, Sean Molenaar, Jan Viljanen, Viktor Szakats, FX Coudert, JCount, Misty De Meo and Tom Schoonjans.
+
+Former maintainers with significant contributions include Tim Smith, Baptiste Fontaine, Xu Cheng, Martin Afanasjew,  Brett Koonce, Charlie Sharpsteen, Jack Nagel, Adam Vandenberg, Andrew Janke, Alex Dunn, neutric, Tomasz Pajor, Uladzislau Shablinski, Alyssa Ross, ilovezfs and Homebrew's creator: Max Howell.
 
 ## BUGS
 

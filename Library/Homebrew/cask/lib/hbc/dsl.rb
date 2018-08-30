@@ -1,4 +1,5 @@
 require "locale"
+require "lazy_object"
 
 require "hbc/artifact"
 
@@ -14,7 +15,6 @@ require "hbc/dsl/depends_on"
 require "hbc/dsl/gpg"
 require "hbc/dsl/postflight"
 require "hbc/dsl/preflight"
-require "hbc/dsl/stanza_proxy"
 require "hbc/dsl/uninstall_postflight"
 require "hbc/dsl/uninstall_preflight"
 require "hbc/dsl/version"
@@ -138,7 +138,17 @@ module Hbc
         raise CaskInvalidError.new(cask, "No default language specified.")
       end
 
-      MacOS.languages.map(&Locale.method(:parse)).each do |locale|
+      locales = MacOS.languages
+                     .map do |language|
+                       begin
+                         Locale.parse(language)
+                       rescue Locale::ParserError
+                         nil
+                       end
+                     end
+                     .compact
+
+      locales.each do |locale|
         key = locale.detect(@language_blocks.keys)
 
         next if key.nil?
@@ -155,10 +165,12 @@ module Hbc
       @language_blocks.keys.flatten
     end
 
-    def url(*args, &block)
+    def url(*args)
       set_unique_stanza(:url, args.empty? && !block_given?) do
-        begin
-          URL.from(*args, &block)
+        if block_given?
+          LazyObject.new { URL.new(*yield) }
+        else
+          URL.new(*args)
         end
       end
     end

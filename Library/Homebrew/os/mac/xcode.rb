@@ -96,6 +96,16 @@ module OS
         !prefix.nil?
       end
 
+      def sdk(v = nil)
+        @locator ||= XcodeSDKLocator.new
+
+        @locator.sdk_if_applicable(v)
+      end
+
+      def sdk_path(v = nil)
+        sdk(v)&.path
+      end
+
       def update_instructions
         if MacOS.version >= "10.9" && !OS::Mac.prerelease?
           <<~EOS
@@ -211,7 +221,11 @@ module OS
       end
 
       def separate_header_package?
-        MacOS.version >= :mojave
+        version >= "10"
+      end
+
+      def provides_sdk?
+        version >= "8"
       end
 
       def headers_installed?
@@ -220,6 +234,16 @@ module OS
         else
           headers_version == version
         end
+      end
+
+      def sdk(v = nil)
+        @locator ||= CLTSDKLocator.new
+
+        @locator.sdk_if_applicable(v)
+      end
+
+      def sdk_path(v = nil)
+        sdk(v)&.path
       end
 
       def update_instructions
@@ -241,7 +265,7 @@ module OS
         # on the older supported platform for that Xcode release, i.e there's no
         # CLT package for 10.11 that contains the Clang version from Xcode 8.
         case MacOS.version
-        when "10.14" then "1000.10.38"
+        when "10.14" then "1000.10.43.1"
         when "10.13" then "902.0.39.2"
         when "10.12" then "900.0.39.2"
         when "10.11" then "800.0.42.1"
@@ -254,6 +278,7 @@ module OS
 
       def minimum_version
         case MacOS.version
+        when "10.14" then "10.0.0"
         when "10.13" then "9.0.0"
         when "10.12" then "8.0.0"
         else              "1.0.0"

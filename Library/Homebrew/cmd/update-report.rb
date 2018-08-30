@@ -20,18 +20,24 @@ module Homebrew
 
   def update_report
     HOMEBREW_REPOSITORY.cd do
-      analytics_message_displayed = \
+      analytics_message_displayed =
         Utils.popen_read("git", "config", "--local", "--get", "homebrew.analyticsmessage").chuzzle
-      analytics_disabled = \
+      cask_analytics_message_displayed =
+        Utils.popen_read("git", "config", "--local", "--get", "homebrew.caskanalyticsmessage").chuzzle
+      analytics_disabled =
         Utils.popen_read("git", "config", "--local", "--get", "homebrew.analyticsdisabled").chuzzle
-      if analytics_message_displayed != "true" && analytics_disabled != "true" &&
-         !ENV["HOMEBREW_NO_ANALYTICS"] && !ENV["HOMEBREW_NO_ANALYTICS_MESSAGE_OUTPUT"]
+      if analytics_message_displayed != "true" &&
+         cask_analytics_message_displayed != "true" &&
+         analytics_disabled != "true" &&
+         !ENV["HOMEBREW_NO_ANALYTICS"] &&
+         !ENV["HOMEBREW_NO_ANALYTICS_MESSAGE_OUTPUT"]
+
         ENV["HOMEBREW_NO_ANALYTICS_THIS_RUN"] = "1"
         # Use the shell's audible bell.
         print "\a"
 
         # Use an extra newline and bold to avoid this being missed.
-        ohai "Homebrew has enabled anonymous aggregate user behaviour analytics."
+        ohai "Homebrew has enabled anonymous aggregate formulae and cask analytics."
         puts <<~EOS
           #{Tty.bold}Read the analytics documentation (and how to opt-out) here:
             #{Formatter.url("https://docs.brew.sh/Analytics")}#{Tty.reset}
@@ -41,6 +47,19 @@ module Homebrew
         # Consider the message possibly missed if not a TTY.
         if $stdout.tty?
           safe_system "git", "config", "--local", "--replace-all", "homebrew.analyticsmessage", "true"
+          safe_system "git", "config", "--local", "--replace-all", "homebrew.caskanalyticsmessage", "true"
+        end
+      end
+
+      donation_message_displayed =
+        Utils.popen_read("git", "config", "--local", "--get", "homebrew.donationmessage").chuzzle
+      if donation_message_displayed != "true"
+        ohai "Homebrew is run entirely by unpaid volunteers. Please consider donating:"
+        puts "  #{Formatter.url("https://github.com/Homebrew/brew#donations")}\n"
+
+        # Consider the message possibly missed if not a TTY.
+        if $stdout.tty?
+          safe_system "git", "config", "--local", "--replace-all", "homebrew.donationmessage", "true"
         end
       end
     end
@@ -61,6 +80,13 @@ module Homebrew
       puts "Updated Homebrew from #{shorten_revision(initial_revision)} to #{shorten_revision(current_revision)}."
       updated = true
     end
+
+    out, _, status = system_command("git",
+                                    args: ["describe", "--tags", "--abbrev=0", initial_revision],
+                                    chdir: HOMEBREW_REPOSITORY,
+                                    print_stderr: false)
+
+    initial_version = Version.new(out) if status.success?
 
     updated_taps = []
     Tap.each do |tap|
@@ -85,6 +111,7 @@ module Homebrew
     end
 
     migrate_legacy_cache_if_necessary
+    migrate_cache_entries_to_double_dashes(initial_version)
     migrate_legacy_keg_symlinks_if_necessary
 
     if !updated
@@ -141,10 +168,6 @@ module Homebrew
     return unless legacy_cache.writable_real?
     FileUtils.touch migration_attempted_file
 
-    # Cleanup to avoid copying files unnecessarily
-    ohai "Cleaning up #{legacy_cache}..."
-    Cleanup.cleanup_cache legacy_cache
-
     # This directory could have been compromised if it's world-writable/
     # a symlink/owned by another user so don't copy files in those cases.
     world_writable = legacy_cache.stat.mode & 0777 == 0777
@@ -179,6 +202,53 @@ module Homebrew
           Failed to delete #{legacy_cache}.
           Please do so manually.
         EOS
+      end
+    end
+  end
+
+  def migrate_cache_entries_to_double_dashes(initial_version)
+    return if initial_version && initial_version > "1.7.1"
+
+    return if ENV.key?("HOMEBREW_DISABLE_LOAD_FORMULA")
+
+    ohai "Migrating cache entries..."
+
+    Formula.each do |formula|
+      specs = [*formula.stable, *formula.devel, *formula.head]
+
+      resources = [*formula.bottle&.resource] + specs.flat_map do |spec|
+        [
+          spec,
+          *spec.resources.values,
+          *spec.patches.select(&:external?).map(&:resource),
+        ]
+      end
+
+      resources.each do |resource|
+        downloader = resource.downloader
+
+        name = resource.download_name
+        version = resource.version
+
+        new_location = downloader.cached_location
+        extname = new_location.extname
+        old_location = downloader.cached_location.dirname/"#{name}-#{version}#{extname}"
+
+        next unless old_location.file?
+
+        if new_location.exist?
+          begin
+            FileUtils.rm_rf old_location
+          rescue Errno::EACCES
+            opoo "Could not remove #{old_location}, please do so manually."
+          end
+        else
+          begin
+            FileUtils.mv old_location, new_location
+          rescue Errno::EACCES
+            opoo "Could not move #{old_location} to #{new_location}, please do so manually."
+          end
+        end
       end
     end
   end

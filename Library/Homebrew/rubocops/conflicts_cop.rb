@@ -1,5 +1,5 @@
-require_relative "./extend/formula_cop"
-require_relative "../extend/string"
+require "rubocops/extend/formula_cop"
+require "extend/string"
 
 module RuboCop
   module Cop
@@ -10,7 +10,6 @@ module RuboCop
               "Use `keg_only :versioned_formula` instead.".freeze
 
         WHITELIST = %w[
-          node@
           bash-completion@
         ].freeze
 

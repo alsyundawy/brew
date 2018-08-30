@@ -391,7 +391,8 @@ module Homebrew
           "rebuild" => bottle.rebuild,
           "tags" => {
             tag => {
-              "filename" => filename.to_s,
+              "filename" => filename.bintray,
+              "local_filename" => filename.to_s,
               "sha256" => sha256,
             },
           },
@@ -402,7 +403,7 @@ module Homebrew
         },
       },
     }
-    File.open("#{filename.prefix}.bottle.json", "w") do |file|
+    File.open(filename.json, "w") do |file|
       file.write JSON.generate json
     end
   end

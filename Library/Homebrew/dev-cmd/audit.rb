@@ -74,6 +74,7 @@ module Homebrew
 
     formula_count = 0
     problem_count = 0
+    corrected_problem_count = 0
     new_formula_problem_count = 0
     new_formula = args.new_formula?
     strict = new_formula || args.strict?
@@ -129,6 +130,7 @@ module Homebrew
       formula_count += 1
       problem_count += fa.problems.size
       problem_lines = format_problem_lines(fa.problems)
+      corrected_problem_count = options[:style_offenses].count(&:corrected?)
       new_formula_problem_lines = format_problem_lines(fa.new_formula_problems)
       if args.display_filename?
         puts problem_lines.map { |s| "#{f.path}: #{s}" }
@@ -156,7 +158,11 @@ module Homebrew
     total_problems_count = problem_count + new_formula_problem_count
     problem_plural = Formatter.pluralize(total_problems_count, "problem")
     formula_plural = Formatter.pluralize(formula_count, "formula")
-    errors_summary = "#{problem_plural} in #{formula_plural}"
+    corrected_problem_plural = Formatter.pluralize(corrected_problem_count, "problem")
+    errors_summary = "#{problem_plural} in #{formula_plural} detected"
+    if corrected_problem_count.positive?
+      errors_summary += ", #{corrected_problem_plural} corrected"
+    end
 
     if problem_count.positive? ||
        (new_formula_problem_count.positive? && !created_pr_comment)
@@ -511,15 +517,6 @@ module Homebrew
       end
     end
 
-    def audit_bottle_spec
-      return unless @official_tap
-      return if @new_formula
-      return unless @online
-      return if formula.bottle_defined? || formula.bottle_disabled?
-      return if formula.name == "testbottest"
-      problem "`bottle` is not defined"
-    end
-
     def audit_github_repository
       return unless @online
       return unless @new_formula
@@ -772,7 +769,7 @@ module Homebrew
       end
       bin_names.each do |name|
         ["system", "shell_output", "pipe_output"].each do |cmd|
-          if text =~ %r{(def test|test do).*(#{Regexp.escape(HOMEBREW_PREFIX)}/bin/)?#{cmd}[\(\s]+['"]#{Regexp.escape(name)}[\s'"]}m
+          if text =~ /test do.*#{cmd}[\(\s]+['"]#{Regexp.escape(name)}[\s'"]/m
             problem %Q(fully scope test #{cmd} calls e.g. #{cmd} "\#{bin}/#{name}")
           end
         end
@@ -981,14 +978,6 @@ module Homebrew
       end
 
       return unless using
-
-      if using == :ssl3 || \
-         (Object.const_defined?("CurlSSL3DownloadStrategy") && using == CurlSSL3DownloadStrategy)
-        problem "The SSL3 download strategy is deprecated, please choose a different URL"
-      elsif (Object.const_defined?("CurlUnsafeDownloadStrategy") && using == CurlUnsafeDownloadStrategy) || \
-            (Object.const_defined?("UnsafeSubversionDownloadStrategy") && using == UnsafeSubversionDownloadStrategy)
-        problem "#{using.name} is deprecated, please choose a different URL"
-      end
 
       if using == :cvs
         mod = specs[:module]

@@ -4,6 +4,7 @@ require "formula_installer"
 require "unpack_strategy"
 
 require "hbc/cask_dependencies"
+require "hbc/download"
 require "hbc/staged"
 require "hbc/verify"
 
@@ -88,6 +89,10 @@ module Hbc
       stage
       install_artifacts
       enable_accessibility_access
+
+      unless @cask.tap&.private?
+        ::Utils::Analytics.report_event("cask_install", @cask.token)
+      end
 
       puts summary
     end

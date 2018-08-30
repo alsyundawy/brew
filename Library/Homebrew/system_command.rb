@@ -28,16 +28,17 @@ class SystemCommand
   end
 
   def run!
+    puts command.shelljoin.gsub(/\\=/, "=") if verbose? || ARGV.debug?
+
     @merged_output = []
-    odebug command.shelljoin
 
     each_output_line do |type, line|
       case type
       when :stdout
-        puts line.chomp if print_stdout?
+        $stdout << line if print_stdout?
         @merged_output << [:stdout, line]
       when :stderr
-        $stderr.puts Formatter.error(line.chomp) if print_stderr?
+        $stderr << line if print_stderr?
         @merged_output << [:stderr, line]
       end
     end
@@ -46,13 +47,16 @@ class SystemCommand
     result
   end
 
-  def initialize(executable, args: [], sudo: false, input: [], print_stdout: false, print_stderr: true, must_succeed: false, env: {}, **options)
+  def initialize(executable, args: [], sudo: false, env: {}, input: [], must_succeed: false,
+                 print_stdout: false, print_stderr: true, verbose: false, **options)
+
     @executable = executable
     @args = args
     @sudo = sudo
     @input = [*input]
     @print_stdout = print_stdout
     @print_stderr = print_stderr
+    @verbose = verbose
     @must_succeed = must_succeed
     options.assert_valid_keys!(:chdir)
     @options = options
@@ -71,18 +75,19 @@ class SystemCommand
 
   attr_reader :executable, :args, :input, :options, :env
 
-  attr_predicate :sudo?, :print_stdout?, :print_stderr?, :must_succeed?
+  attr_predicate :sudo?, :print_stdout?, :print_stderr?, :verbose?, :must_succeed?
 
   def env_args
-    return [] if env.empty?
+    set_variables = env.reject { |_, value| value.nil? }
+                       .map do |name, value|
+                         sanitized_name = Shellwords.escape(name)
+                         sanitized_value = Shellwords.escape(value)
+                         "#{sanitized_name}=#{sanitized_value}"
+                       end
 
-    variables = env.map do |name, value|
-      sanitized_name = Shellwords.escape(name)
-      sanitized_value = Shellwords.escape(value)
-      "#{sanitized_name}=#{sanitized_value}"
-    end
+    return [] if set_variables.empty?
 
-    ["env", *variables]
+    ["env", *set_variables]
   end
 
   def sudo_prefix
@@ -102,7 +107,7 @@ class SystemCommand
     @expanded_args ||= args.map do |arg|
       if arg.respond_to?(:to_path)
         File.absolute_path(arg)
-      elsif arg.is_a?(Integer) || arg.is_a?(Float)
+      elsif arg.is_a?(Integer) || arg.is_a?(Float) || arg.is_a?(URI)
         arg.to_s
       else
         arg.to_str
@@ -114,7 +119,7 @@ class SystemCommand
     executable, *args = command
 
     raw_stdin, raw_stdout, raw_stderr, raw_wait_thr =
-      Open3.popen3([executable, executable], *args, **options)
+      Open3.popen3(env, [executable, executable], *args, **options)
 
     write_input_to(raw_stdin)
     raw_stdin.close_write
@@ -157,21 +162,26 @@ class SystemCommand
       hash[type] << line
     end
 
-    Result.new(command, output[:stdout], output[:stderr], @status.exitstatus)
+    Result.new(command, output[:stdout], output[:stderr], @status)
   end
 
   class Result
-    attr_accessor :command, :stdout, :stderr, :exit_status
+    attr_accessor :command, :stdout, :stderr, :status, :exit_status
 
-    def initialize(command, stdout, stderr, exit_status)
+    def initialize(command, stdout, stderr, status)
       @command     = command
       @stdout      = stdout
       @stderr      = stderr
-      @exit_status = exit_status
+      @status      = status
+      @exit_status = status.exitstatus
     end
 
     def success?
       @exit_status.zero?
+    end
+
+    def to_ary
+      [stdout, stderr, status]
     end
 
     def plist

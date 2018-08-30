@@ -1,4 +1,4 @@
-require_relative "./extend/formula_cop"
+require "rubocops/extend/formula_cop"
 
 module RuboCop
   module Cop
@@ -55,7 +55,7 @@ module RuboCop
           end
 
           find_method_with_args(body_node, :system, "cargo", "build") do
-            problem "use \"cargo\", \"install\", \"--root\", prefix"
+            problem "use \"cargo\", \"install\", \"--root\", prefix, \"--path\", \".\""
           end
         end
       end
