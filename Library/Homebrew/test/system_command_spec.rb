@@ -1,18 +1,18 @@
 describe SystemCommand do
   describe "#initialize" do
-    let(:env_args) { ["bash", "-c", 'printf "%s" "${A?}" "${B?}" "${C?}"'] }
-    let(:env) { { "A" => "1", "B" => "2", "C" => "3" } }
-    let(:sudo) { false }
-
     subject(:command) {
       described_class.new(
         "env",
-        args: env_args,
-        env: env,
+        args:         env_args,
+        env:          env,
         must_succeed: true,
-        sudo: sudo,
+        sudo:         sudo,
       )
     }
+
+    let(:env_args) { ["bash", "-c", 'printf "%s" "${A?}" "${B?}" "${C?}"'] }
+    let(:env) { { "A" => "1", "B" => "2", "C" => "3" } }
+    let(:sudo) { false }
 
     context "when given some environment variables" do
       its("run!.stdout") { is_expected.to eq("123") }
@@ -223,15 +223,21 @@ describe SystemCommand do
 
     it 'does not format `stderr` when it starts with \r' do
       expect {
-        system_command "bash",
-                       args: ["-c", 'printf "\r%s" "###################                                                       27.6%" 1>&2']
-      }.to output("\r###################                                                       27.6%").to_stderr
+        system_command \
+          "bash",
+          args: [
+            "-c",
+            'printf "\r%s" "###################                                                       27.6%" 1>&2',
+          ]
+      }.to output( \
+        "\r###################                                                       27.6%",
+      ).to_stderr
     end
 
     context "when given an executable with spaces and no arguments" do
       let(:executable) { mktmpdir/"App Uninstaller" }
 
-      before(:each) do
+      before do
         executable.write <<~SH
           #!/usr/bin/env bash
           true

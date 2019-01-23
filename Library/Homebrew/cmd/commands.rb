@@ -4,15 +4,36 @@
 #:    If `--quiet` is passed, list only the names of commands without the header.
 #:    With `--include-aliases`, the aliases of internal commands will be included.
 
+require "cli_parser"
+
 module Homebrew
   module_function
 
+  def commands_args
+    Homebrew::CLI::Parser.new do
+      usage_banner <<~EOS
+        `commands` [<options>]
+
+        Show a list of built-in and external commands.
+      EOS
+      switch "--quiet",
+        description: "List only the names of commands without the header."
+      switch "--include-aliases",
+        depends_on:  "--quiet",
+        description: "Include the aliases of internal commands."
+      switch :verbose
+      switch :debug
+    end
+  end
+
   def commands
-    if ARGV.include? "--quiet"
+    commands_args.parse
+
+    if args.quiet?
       cmds = internal_commands
       cmds += external_commands
       cmds += internal_developer_commands
-      cmds += HOMEBREW_INTERNAL_COMMAND_ALIASES.keys if ARGV.include? "--include-aliases"
+      cmds += HOMEBREW_INTERNAL_COMMAND_ALIASES.keys if args.include_aliases?
       puts Formatter.columns(cmds.sort)
       return
     end
@@ -48,8 +69,10 @@ module Homebrew
     cmd_paths.each_with_object([]) do |path, cmds|
       Dir["#{path}/brew-*"].each do |file|
         next unless File.executable?(file)
+
         cmd = File.basename(file, ".rb")[5..-1]
         next if cmd.include?(".")
+
         cmds << cmd
       end
     end.sort

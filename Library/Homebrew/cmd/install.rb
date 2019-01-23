@@ -21,10 +21,9 @@
 #:
 #:    If `--cc=`<compiler> is passed, attempt to compile using <compiler>.
 #:    <compiler> should be the name of the compiler's executable, for instance
-#:    `gcc-8` for gcc 8, `gcc-4.2` for Apple's GCC 4.2, or `gcc-4.9` for a
-#:    Homebrew-provided GCC 4.9. In order to use LLVM's clang, use
-#:    `llvm_clang`. To specify the Apple-provided clang, use `clang`. This
-#:    parameter will only accept compilers that are provided by Homebrew or
+#:    `gcc-7` for GCC 7. In order to use LLVM's clang, use `llvm_clang`.
+#:    To specify the Apple-provided clang, use `clang`.
+#:    This parameter will only accept compilers that are provided by Homebrew or
 #:    bundled with macOS. Please do not file issues if you encounter errors
 #:    while using this flag.
 #:
@@ -79,6 +78,7 @@ require "formula_installer"
 require "development_tools"
 require "install"
 require "search"
+require "cleanup"
 
 module Homebrew
   module_function
@@ -98,6 +98,7 @@ module Homebrew
         if name !~ HOMEBREW_TAP_FORMULA_REGEX && name !~ HOMEBREW_CASK_TAP_CASK_REGEX
           next
         end
+
         tap = Tap.fetch(Regexp.last_match(1), Regexp.last_match(2))
         tap.install unless tap.installed?
       end
@@ -237,6 +238,7 @@ module Homebrew
         # Even if we don't install this formula mark it as no longer just
         # installed as a dependency.
         next unless f.opt_prefix.directory?
+
         keg = Keg.new(f.opt_prefix.resolved_path)
         tab = Tab.for_keg(keg)
         unless tab.installed_on_request
@@ -246,11 +248,13 @@ module Homebrew
       end
 
       return if formulae.empty?
+
       Install.perform_preinstall_checks
 
       formulae.each do |f|
         Migrator.migrate_if_needed(f)
         install_formula(f)
+        Cleanup.install_formula_clean!(f)
       end
       Homebrew.messages.display_messages
     rescue FormulaUnreadableError, FormulaClassUnavailableError,
@@ -288,6 +292,7 @@ module Homebrew
 
       # Do not search taps if the formula name is qualified
       return if e.name.include?("/")
+
       ohai "Searching taps..."
       taps_search_results = search_taps(e.name)[:formulae]
       case taps_search_results.length

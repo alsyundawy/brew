@@ -1,9 +1,9 @@
 # @private
 module CompilerConstants
-  GNU_GCC_VERSIONS = %w[4.3 4.4 4.5 4.6 4.7 4.8 4.9 5 6 7 8].freeze
-  GNU_GCC_REGEXP = /^gcc-(4\.[3-9]|[5-8])$/
+  GNU_GCC_VERSIONS = %w[4.9 5 6 7 8].freeze
+  GNU_GCC_REGEXP = /^gcc-(4\.9|[5-8])$/.freeze
   COMPILER_SYMBOL_MAP = {
-    "gcc-4.0"    => :gcc_4_0,
+    "gcc"        => :gcc,
     "gcc-4.2"    => :gcc_4_2,
     "clang"      => :clang,
     "llvm_clang" => :llvm_clang,
@@ -42,7 +42,7 @@ class CompilerFailure
     if spec.is_a?(Hash)
       _, major_version = spec.first
       name = "gcc-#{major_version}"
-      # so fails_with :gcc => '4.8' simply marks all 4.8 releases incompatible
+      # so fails_with :gcc => '7' simply marks all 7 releases incompatible
       version = "#{major_version}.999"
     else
       name = spec
@@ -66,25 +66,13 @@ class CompilerFailure
   end
 
   COLLECTIONS = {
-    cxx11: [
-      create(:gcc_4_0),
+    cxx11:  [
       create(:gcc_4_2),
       create(:clang) { build 425 },
-      create(gcc: "4.3"),
-      create(gcc: "4.4"),
-      create(gcc: "4.5"),
-      create(gcc: "4.6"),
     ],
-    cxx14: [
+    cxx14:  [
       create(:clang) { build 600 },
-      create(:gcc_4_0),
       create(:gcc_4_2),
-      create(gcc: "4.3"),
-      create(gcc: "4.4"),
-      create(gcc: "4.5"),
-      create(gcc: "4.6"),
-      create(gcc: "4.7"),
-      create(gcc: "4.8"),
     ],
     openmp: [
       create(:clang),
@@ -98,9 +86,9 @@ class CompilerSelector
   Compiler = Struct.new(:name, :version)
 
   COMPILER_PRIORITY = {
-    clang: [:clang, :gcc_4_2, :gnu, :gcc_4_0, :llvm_clang],
-    gcc_4_2: [:gcc_4_2, :gnu, :clang, :gcc_4_0],
-    gcc_4_0: [:gcc_4_0, :gcc_4_2, :gnu, :clang],
+    clang:   [:clang, :gcc_4_2, :gnu, :llvm_clang],
+    gcc_4_2: [:gcc_4_2, :gnu, :clang],
+    gcc:     [:gnu, :gcc, :llvm_clang, :clang, :gcc_4_2],
   }.freeze
 
   def self.select_for(formula, compilers = self.compilers)
@@ -150,9 +138,9 @@ class CompilerSelector
   end
 
   def compiler_version(name)
-    case name
-    when GNU_GCC_REGEXP
-      versions.non_apple_gcc_version(name)
+    case name.to_s
+    when "gcc", GNU_GCC_REGEXP
+      versions.non_apple_gcc_version(name.to_s)
     else
       versions.send("#{name}_build_version")
     end

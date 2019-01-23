@@ -46,13 +46,14 @@ class FakeSystemCommand
     unless responses.key?(command)
       raise("no response faked for #{command.inspect}, faked responses are: #{responses.inspect}")
     end
+
     system_calls[command] += 1
 
     response = responses[command]
     if response.respond_to?(:call)
       response.call(command_string, options)
     else
-      SystemCommand::Result.new(command, response, "", OpenStruct.new(exitstatus: 0))
+      SystemCommand::Result.new(command, [[:stdout, response]], OpenStruct.new(exitstatus: 0))
     end
   end
 
@@ -62,7 +63,7 @@ class FakeSystemCommand
 end
 
 RSpec.configure do |config|
-  config.after(:each) do
+  config.after do
     begin
       FakeSystemCommand.verify_expectations!
     ensure

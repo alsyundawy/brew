@@ -244,7 +244,7 @@ describe Version do
 
   describe "::parse" do
     it "returns a NULL version when the URL cannot be parsed" do
-      expect(described_class.parse("https://example.com/blah.tar")).to be_null
+      expect(described_class.parse("https://brew.sh/blah.tar")).to be_null
       expect(described_class.parse("foo")).to be_null
     end
   end
@@ -267,17 +267,17 @@ describe Version do
 
     specify "version all dots" do
       expect(described_class.create("1.14"))
-        .to be_detected_from("https://example.com/foo.bar.la.1.14.zip")
+        .to be_detected_from("https://brew.sh/foo.bar.la.1.14.zip")
     end
 
     specify "version underscore separator" do
       expect(described_class.create("1.1"))
-        .to be_detected_from("https://example.com/grc_1.1.tar.gz")
+        .to be_detected_from("https://brew.sh/grc_1.1.tar.gz")
     end
 
     specify "boost version style" do
       expect(described_class.create("1.39.0"))
-        .to be_detected_from("https://example.com/boost_1_39_0.tar.bz2")
+        .to be_detected_from("https://brew.sh/boost_1_39_0.tar.bz2")
     end
 
     specify "erlang version style" do
@@ -312,7 +312,10 @@ describe Version do
 
     specify "elasticsearch alpha style" do
       expect(described_class.create("5.0.0-alpha5"))
-        .to be_detected_from("https://download.elastic.co/elasticsearch/release/org/elasticsearch/distribution/tar/elasticsearch/5.0.0-alpha5/elasticsearch-5.0.0-alpha5.tar.gz")
+        .to be_detected_from(
+          "https://download.elastic.co/elasticsearch/release/org/elasticsearch" \
+          "/distribution/tar/elasticsearch/5.0.0-alpha5/elasticsearch-5.0.0-alpha5.tar.gz",
+        )
     end
 
     specify "gloox beta style" do
@@ -337,27 +340,27 @@ describe Version do
 
     specify "version internal dash" do
       expect(described_class.create("1.1-2"))
-        .to be_detected_from("https://example.com/foo-arse-1.1-2.tar.gz")
+        .to be_detected_from("https://brew.sh/foo-arse-1.1-2.tar.gz")
     end
 
     specify "version single digit" do
       expect(described_class.create("45"))
-        .to be_detected_from("https://example.com/foo_bar.45.tar.gz")
+        .to be_detected_from("https://brew.sh/foo_bar.45.tar.gz")
     end
 
     specify "noseparator single digit" do
       expect(described_class.create("45"))
-        .to be_detected_from("https://example.com/foo_bar45.tar.gz")
+        .to be_detected_from("https://brew.sh/foo_bar45.tar.gz")
     end
 
     specify "version developer that hates us format" do
       expect(described_class.create("1.2.3"))
-        .to be_detected_from("https://example.com/foo-bar-la.1.2.3.tar.gz")
+        .to be_detected_from("https://brew.sh/foo-bar-la.1.2.3.tar.gz")
     end
 
     specify "version regular" do
       expect(described_class.create("1.21"))
-        .to be_detected_from("https://example.com/foo_bar-1.21.tar.gz")
+        .to be_detected_from("https://brew.sh/foo_bar-1.21.tar.gz")
     end
 
     specify "version sourceforge download" do
@@ -379,7 +382,7 @@ describe Version do
 
     specify "yet another version" do
       expect(described_class.create("0.15.1b"))
-        .to be_detected_from("https://example.com/mad-0.15.1b.tar.gz")
+        .to be_detected_from("https://brew.sh/mad-0.15.1b.tar.gz")
     end
 
     specify "lame version style" do
@@ -469,7 +472,7 @@ describe Version do
 
     specify "date-based version style" do
       expect(described_class.create("2017-04-17"))
-        .to be_detected_from("https://example.com/dada-v2017-04-17.tar.gz")
+        .to be_detected_from("https://brew.sh/dada-v2017-04-17.tar.gz")
     end
 
     specify "devel spec version style" do
@@ -480,7 +483,9 @@ describe Version do
       expect(described_class.create("2.074.0-rc1"))
         .to be_detected_from("https://github.com/dlang/dmd/archive/v2.074.0-rc1.tar.gz")
       expect(described_class.create("5.0.0-alpha10"))
-        .to be_detected_from("https://github.com/premake/premake-core/releases/download/v5.0.0-alpha10/premake-5.0.0-alpha10-src.zip")
+        .to be_detected_from(
+          "https://github.com/premake/premake-core/releases/download/v5.0.0-alpha10/premake-5.0.0-alpha10-src.zip",
+        )
     end
 
     specify "jenkins version style" do
@@ -512,14 +517,21 @@ describe Version do
       expect(described_class.create("9.2"))
         .to be_detected_from("https://cdn.nuxeo.com/nuxeo-9.2/nuxeo-server-9.2-tomcat.zip")
       expect(described_class.create("0.181"))
-        .to be_detected_from("https://search.maven.org/remotecontent?filepath=com/facebook/presto/presto-cli/0.181/presto-cli-0.181-executable.jar")
+        .to be_detected_from(
+          "https://search.maven.org/remotecontent?filepath=" \
+          "com/facebook/presto/presto-cli/0.181/presto-cli-0.181-executable.jar",
+        )
       expect(described_class.create("1.2.3"))
-        .to be_detected_from("https://search.maven.org/remotecontent?filepath=org/apache/orc/orc-tools/1.2.3/orc-tools-1.2.3-uber.jar")
+        .to be_detected_from(
+          "https://search.maven.org/remotecontent?filepath=org/apache/orc/orc-tools/1.2.3/orc-tools-1.2.3-uber.jar",
+        )
     end
 
     specify "apache version style" do
       expect(described_class.create("1.2.0-rc2"))
-        .to be_detected_from("https://www.apache.org/dyn/closer.cgi?path=/cassandra/1.2.0/apache-cassandra-1.2.0-rc2-bin.tar.gz")
+        .to be_detected_from(
+          "https://www.apache.org/dyn/closer.cgi?path=/cassandra/1.2.0/apache-cassandra-1.2.0-rc2-bin.tar.gz",
+        )
     end
 
     specify "jpeg version style" do
@@ -556,7 +568,9 @@ describe Version do
 
     specify "cmucl version style" do
       expect(described_class.create("20c"))
-        .to be_detected_from("https://common-lisp.net/project/cmucl/downloads/release/20c/cmucl-20c-x86-darwin.tar.bz2")
+        .to be_detected_from(
+          "https://common-lisp.net/project/cmucl/downloads/release/20c/cmucl-20c-x86-darwin.tar.bz2",
+        )
     end
 
     specify "fann version style" do
@@ -581,7 +595,9 @@ describe Version do
 
     specify "suite3270 version style" do
       expect(described_class.create("3.3.12ga7"))
-        .to be_detected_from("https://downloads.sourceforge.net/project/x3270/x3270/3.3.12ga7/suite3270-3.3.12ga7-src.tgz")
+        .to be_detected_from(
+          "https://downloads.sourceforge.net/project/x3270/x3270/3.3.12ga7/suite3270-3.3.12ga7-src.tgz",
+        )
     end
 
     specify "wwwoffle version style" do
@@ -596,12 +612,17 @@ describe Version do
 
     specify "fontforge version style" do
       expect(described_class.create("20120731"))
-        .to be_detected_from("https://downloads.sourceforge.net/project/fontforge/fontforge-source/fontforge_full-20120731-b.tar.bz2")
+        .to be_detected_from(
+          "https://downloads.sourceforge.net/project/fontforge/fontforge-source/fontforge_full-20120731-b.tar.bz2",
+        )
     end
 
     specify "ezlupdate version style" do
       expect(described_class.create("2011.10"))
-        .to be_detected_from("https://github.com/downloads/ezsystems/ezpublish-legacy/ezpublish_community_project-2011.10-with_ezc.tar.bz2")
+        .to be_detected_from(
+          "https://github.com/downloads/ezsystems" \
+          "/ezpublish-legacy/ezpublish_community_project-2011.10-with_ezc.tar.bz2",
+        )
     end
 
     specify "aespipe version style" do

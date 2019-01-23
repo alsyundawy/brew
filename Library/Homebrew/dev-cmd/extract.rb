@@ -1,7 +1,7 @@
 #:  * `extract` [`--force`] <formula> <tap> [`--version=`<version>]:
-#:    Looks through repository history to find the <version> of <formula> and
-#:    creates a copy in <tap>/Formula/<formula>@<version>.rb. If the tap is
-#:    not installed yet, attempts to install/clone the tap before continuing.
+#:    Look through repository history to find the most recent version of <formula> and
+#:    create a copy in <tap>`/Formula/`<formula>`@`<version>`.rb`. If the tap is
+#:    not installed yet, attempt to install/clone the tap before continuing.
 #:
 #:    If `--force` is passed, the file at the destination will be overwritten
 #:    if it already exists. Otherwise, existing files will be preserved.
@@ -96,17 +96,30 @@ end
 module Homebrew
   module_function
 
-  def extract
-    Homebrew::CLI::Parser.parse do
-      flag   "--version="
-      switch :debug
+  def extract_args
+    Homebrew::CLI::Parser.new do
+      usage_banner <<~EOS
+        `extract` [<options>] <formula> <tap>
+
+        Look through repository history to find the most recent version of <formula> and
+        create a copy in <tap>`/Formula/`<formula>`@`<version>`.rb`. If the tap is not
+        installed yet, attempt to install/clone the tap before continuing.
+      EOS
+
+      flag "--version=",
+        description: "Extract the provided <version> of <formula> instead of the most recent."
       switch :force
+      switch :debug
     end
+  end
+
+  def extract
+    extract_args.parse
 
     # Expect exactly two named arguments: formula and tap
     raise UsageError if ARGV.named.length != 2
 
-    destination_tap = Tap.fetch(ARGV.named[1])
+    destination_tap = Tap.fetch(ARGV.named.second)
     odie "Cannot extract formula to homebrew/core!" if destination_tap.core_tap?
     destination_tap.install unless destination_tap.installed?
 
@@ -114,7 +127,7 @@ module Homebrew
     repo = CoreTap.instance.path
     # Formulae can technically live in "<repo>/<formula>.rb" or
     # "<repo>/Formula/<formula>.rb", but explicitly use the latter for now
-    # since that is now core tap is structured.
+    # since that is how the core tap is structured.
     file = repo/"Formula/#{name}.rb"
 
     if args.version
@@ -127,10 +140,12 @@ module Homebrew
           rev = Git.last_revision_commit_of_file(repo, file, before_commit: "#{rev}~1")
           break if rev.empty?
           break unless Git.last_revision_of_file(repo, file, before_commit: rev).empty?
+
           ohai "Skipping revision #{rev} - file is empty at this revision" if ARGV.debug?
         end
         test_formula = formula_at_revision(repo, name, file, rev)
         break if test_formula.nil? || test_formula.version == version
+
         ohai "Trying #{test_formula.version} from revision #{rev} against desired #{version}" if ARGV.debug?
       end
       odie "Could not find #{name}! The formula or version may not have existed." if test_formula.nil?
@@ -159,7 +174,7 @@ module Homebrew
         odie <<~EOS
           Destination formula already exists: #{path}
           To overwrite it and continue anyways, run:
-            `brew extract #{name} --version=#{version} --tap=#{destination_tap.name} --force`
+            brew extract --force --version=#{version} #{name} #{destination_tap.name}
         EOS
       end
       ohai "Overwriting existing formula at #{path}" if ARGV.debug?
@@ -172,6 +187,7 @@ module Homebrew
   # @private
   def formula_at_revision(repo, name, file, rev)
     return if rev.empty?
+
     contents = Git.last_revision_of_file(repo, file, before_commit: rev)
     contents.gsub!("@url=", "url ")
     contents.gsub!("require 'brewkit'", "require 'formula'")

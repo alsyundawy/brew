@@ -1,11 +1,12 @@
 require "utils/bottles"
 require "formula"
-require "hbc/cask_loader"
+require "cask/cask_loader"
 require "set"
 
-module CleanupRefinement
-  LATEST_CASK_DAYS = 7
+CLEANUP_DEFAULT_DAYS = 30
+CLEANUP_MAX_AGE_DAYS = 120
 
+module CleanupRefinement
   refine Enumerator do
     def parallel
       queue = Queue.new
@@ -36,19 +37,26 @@ module CleanupRefinement
     end
 
     def nested_cache?
-      directory? && %w[go_cache glide_home java_cache npm_cache gclient_cache].include?(basename.to_s)
+      directory? && %w[cargo_cache go_cache glide_home java_cache npm_cache gclient_cache].include?(basename.to_s)
+    end
+
+    def go_cache_directory?
+      # Go makes its cache contents read-only to ensure cache integrity,
+      # which makes sense but is something we need to undo for cleanup.
+      directory? && %w[go_cache].include?(basename.to_s)
     end
 
     def prune?(days)
       return false unless days
       return true if days.zero?
 
-      # TODO: Replace with ActiveSupport's `.days.ago`.
-      mtime < ((@time ||= Time.now) - days * 60 * 60 * 24)
+      return true if symlink? && !exist?
+
+      mtime < days.days.ago && ctime < days.days.ago
     end
 
     def stale?(scrub = false)
-      return false unless file?
+      return false unless resolved_path.file?
 
       stale_formula?(scrub) || stale_cask?(scrub)
     end
@@ -105,8 +113,8 @@ module CleanupRefinement
       return false unless name = basename.to_s[/\A(.*?)\-\-/, 1]
 
       cask = begin
-        Hbc::CaskLoader.load(name)
-      rescue Hbc::CaskUnavailableError
+        Cask::CaskLoader.load(name)
+      rescue Cask::CaskUnavailableError
         return false
       end
 
@@ -117,8 +125,8 @@ module CleanupRefinement
       return true if scrub && !cask.versions.include?(cask.version)
 
       if cask.version.latest?
-        # TODO: Replace with ActiveSupport's `.days.ago`.
-        return mtime < ((@time ||= Time.now) - LATEST_CASK_DAYS * 60 * 60 * 24)
+        return mtime < CLEANUP_DEFAULT_DAYS.days.ago &&
+               ctime < CLEANUP_DEFAULT_DAYS.days.ago
       end
 
       false
@@ -132,6 +140,8 @@ module Homebrew
   class Cleanup
     extend Predicable
 
+    PERIODIC_CLEAN_FILE = HOMEBREW_CACHE/".cleaned"
+
     attr_predicate :dry_run?, :scrub?
     attr_reader :args, :days, :cache
     attr_reader :disk_cleanup_size
@@ -141,32 +151,65 @@ module Homebrew
       @args = args
       @dry_run = dry_run
       @scrub = scrub
-      @days = days
+      @days = days || CLEANUP_MAX_AGE_DAYS
       @cache = cache
       @cleaned_up_paths = Set.new
     end
 
+    def self.install_formula_clean!(f)
+      return if ENV["HOMEBREW_NO_INSTALL_CLEANUP"]
+      return unless ENV["HOMEBREW_INSTALL_CLEANUP"]
+
+      cleanup = Cleanup.new
+      if cleanup.periodic_clean_due?
+        cleanup.periodic_clean!
+      elsif f.installed?
+        cleanup.cleanup_formula(f)
+      end
+    end
+
+    def periodic_clean_due?
+      return false if ENV["HOMEBREW_NO_INSTALL_CLEANUP"]
+      return unless ENV["HOMEBREW_INSTALL_CLEANUP"]
+      return true unless PERIODIC_CLEAN_FILE.exist?
+
+      PERIODIC_CLEAN_FILE.mtime < CLEANUP_DEFAULT_DAYS.days.ago
+    end
+
+    def periodic_clean!
+      return false unless periodic_clean_due?
+
+      ohai "`brew cleanup` has not been run in #{CLEANUP_DEFAULT_DAYS} days, running now..."
+      clean!
+    end
+
     def clean!
       if args.empty?
-        cleanup_lockfiles
         Formula.installed.sort_by(&:name).each do |formula|
           cleanup_formula(formula)
         end
         cleanup_cache
         cleanup_logs
+        cleanup_portable_ruby
+        cleanup_lockfiles
         return if dry_run?
+
+        cleanup_old_cache_db
         rm_ds_store
+        prune_prefix_symlinks_and_directories
+        HOMEBREW_CACHE.mkpath
+        FileUtils.touch PERIODIC_CLEAN_FILE
       else
         args.each do |arg|
           formula = begin
-            Formula[arg]
+            Formulary.resolve(arg)
           rescue FormulaUnavailableError, TapFormulaAmbiguityError, TapFormulaWithOldnameAmbiguityError
             nil
           end
 
           cask = begin
-            Hbc::CaskLoader.load(arg)
-          rescue Hbc::CaskUnavailableError
+            Cask::CaskLoader.load(arg)
+          rescue Cask::CaskUnavailableError
             nil
           end
 
@@ -200,12 +243,43 @@ module Homebrew
       unremovable_kegs << keg
     end
 
-    DEFAULT_LOG_DAYS = 14
-
     def cleanup_logs
       return unless HOMEBREW_LOGS.directory?
+      logs_days = if days > CLEANUP_DEFAULT_DAYS
+        CLEANUP_DEFAULT_DAYS
+      else
+        days
+      end
+
       HOMEBREW_LOGS.subdirs.each do |dir|
-        cleanup_path(dir) { dir.rmtree } if dir.prune?(days || DEFAULT_LOG_DAYS)
+        cleanup_path(dir) { dir.rmtree } if dir.prune?(logs_days)
+      end
+    end
+
+    def cleanup_unreferenced_downloads
+      return if dry_run?
+      return unless (cache/"downloads").directory?
+
+      downloads = (cache/"downloads").children
+
+      referenced_downloads = [cache, cache/"Cask"].select(&:directory?)
+                                                  .flat_map(&:children)
+                                                  .select(&:symlink?)
+                                                  .map(&:resolved_path)
+
+      (downloads - referenced_downloads).each do |download|
+        if download.incomplete?
+          begin
+            LockFile.new(download.basename).with_lock do
+              download.unlink
+            end
+          rescue OperationInProgressError
+            # Skip incomplete downloads which are still in progress.
+            next
+          end
+        else
+          download.unlink
+        end
       end
     end
 
@@ -213,11 +287,12 @@ module Homebrew
       entries ||= [cache, cache/"Cask"].select(&:directory?).flat_map(&:children)
 
       entries.each do |path|
+        FileUtils.chmod_R 0755, path if path.go_cache_directory? && !dry_run?
         next cleanup_path(path) { path.unlink } if path.incomplete?
         next cleanup_path(path) { FileUtils.rm_rf path } if path.nested_cache?
 
         if path.prune?(days)
-          if path.file?
+          if path.file? || path.symlink?
             cleanup_path(path) { path.unlink }
           elsif path.directory? && path.to_s.include?("--")
             cleanup_path(path) { FileUtils.rm_rf path }
@@ -227,6 +302,8 @@ module Homebrew
 
         next cleanup_path(path) { path.unlink } if path.stale?(scrub?)
       end
+
+      cleanup_unreferenced_downloads
     end
 
     def cleanup_path(path)
@@ -247,8 +324,8 @@ module Homebrew
     def cleanup_lockfiles(*lockfiles)
       return if dry_run?
 
-      if lockfiles.empty? && HOMEBREW_LOCK_DIR.directory?
-        lockfiles = HOMEBREW_LOCK_DIR.children.select(&:file?)
+      if lockfiles.empty? && HOMEBREW_LOCKS.directory?
+        lockfiles = HOMEBREW_LOCKS.children.select(&:file?)
       end
 
       lockfiles.each do |file|
@@ -263,13 +340,108 @@ module Homebrew
       end
     end
 
-    def rm_ds_store(dirs = nil)
-      dirs ||= %w[Caskroom Cellar Frameworks Library bin etc include lib opt sbin share var]
-               .map { |path| HOMEBREW_PREFIX/path }
-
-      dirs.select(&:directory?).each.parallel do |dir|
-        system_command "find", args: [dir, "-name", ".DS_Store", "-delete"], print_stderr: false
+    def cleanup_portable_ruby
+      system_ruby_version =
+        Utils.popen_read("/usr/bin/ruby", "-e", "puts RUBY_VERSION")
+             .chomp
+      use_system_ruby = (
+        Gem::Version.new(system_ruby_version) >= Gem::Version.new(RUBY_VERSION)
+      ) && ENV["HOMEBREW_FORCE_VENDOR_RUBY"].nil?
+      vendor_path = HOMEBREW_LIBRARY/"Homebrew/vendor"
+      portable_ruby_version_file = vendor_path/"portable-ruby-version"
+      portable_ruby_version = if portable_ruby_version_file.exist?
+        portable_ruby_version_file.read
+                                  .chomp
       end
+
+      portable_ruby_path = vendor_path/"portable-ruby"
+      portable_ruby_glob = "#{portable_ruby_path}/*.*"
+      Pathname.glob(portable_ruby_glob).each do |path|
+        next if !use_system_ruby && portable_ruby_version == path.basename.to_s
+        if dry_run?
+          puts "Would remove: #{path} (#{path.abv})"
+        else
+          FileUtils.rm_rf path
+        end
+      end
+
+      return unless Dir.glob(portable_ruby_glob).empty?
+      return unless portable_ruby_path.exist?
+
+      bundler_path = vendor_path/"bundle/ruby"
+      if dry_run?
+        puts "Would remove: #{bundler_path} (#{bundler_path.abv})"
+        puts "Would remove: #{portable_ruby_path} (#{portable_ruby_path.abv})"
+      else
+        FileUtils.rm_rf [bundler_path, portable_ruby_path]
+      end
+    end
+
+    def cleanup_old_cache_db
+      FileUtils.rm_rf [
+        cache/"desc_cache.json",
+        cache/"linkage.db",
+        cache/"linkage.db.db",
+      ]
+    end
+
+    def rm_ds_store(dirs = nil)
+      dirs ||= begin
+        Keg::MUST_EXIST_DIRECTORIES + [
+          HOMEBREW_PREFIX/"Caskroom",
+        ]
+      end
+      dirs.select(&:directory?).each.parallel do |dir|
+        system_command "find",
+          args:         [dir, "-name", ".DS_Store", "-delete"],
+          print_stderr: false
+      end
+    end
+
+    def prune_prefix_symlinks_and_directories
+      ObserverPathnameExtension.reset_counts!
+
+      dirs = []
+
+      Keg::MUST_EXIST_SUBDIRECTORIES.each do |dir|
+        next unless dir.directory?
+
+        dir.find do |path|
+          path.extend(ObserverPathnameExtension)
+          if path.symlink?
+            unless path.resolved_path_exists?
+              if path.to_s =~ Keg::INFOFILE_RX
+                path.uninstall_info unless dry_run?
+              end
+
+              if dry_run?
+                puts "Would remove (broken link): #{path}"
+              else
+                path.unlink
+              end
+            end
+          elsif path.directory? && !Keg::MUST_EXIST_SUBDIRECTORIES.include?(path)
+            dirs << path
+          end
+        end
+      end
+
+      dirs.reverse_each do |d|
+        if dry_run? && d.children.empty?
+          puts "Would remove (empty directory): #{d}"
+        else
+          d.rmdir_if_possible
+        end
+      end
+
+      return if dry_run?
+
+      return if ObserverPathnameExtension.total.zero?
+
+      n, d = ObserverPathnameExtension.counts
+      print "Pruned #{n} symbolic links "
+      print "and #{d} directories " if d.positive?
+      puts "from #{HOMEBREW_PREFIX}"
     end
   end
 end

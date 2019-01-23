@@ -7,18 +7,19 @@ Homebrew comes with completion definitions for the `brew` command. Some packages
 You must configure your shell to enable the completion support. This is because the Homebrew-managed completions are stored under `HOMEBREW_PREFIX`, which your system shell may not be aware of, and because it is difficult to automatically configure `bash` and `zsh` completions in a robust manner, so the Homebrew installer cannot do it for you.
 
 ## Configuring Completions in `bash`
+
 To make Homebrew's completions available in `bash`, you must source the definitions as part of your shell startup. Add the following to your `~/.bashrc` file:
 
 ```sh
 if type brew 2&>/dev/null; then
-  for completion_file in $(brew --prefix)/etc/bash_completion.d/*; do
-    source "$completion_file"
-  done
+  source "$(brew --prefix)/etc/bash_completion.d/*"
+else
+  echo "run: brew install git bash-completion"
 fi
 ```
 
 ## Configuring Completions in `zsh`
-To make Homebrew's completions available in `zsh`, you must get the Homebrew-managed zsh site-functions on your `$FPATH` before initializing `zsh`'s completion facility. Add the following to your `~/.zshrc` file:
+To make Homebrew's completions available in `zsh`, you must get the Homebrew-managed zsh site-functions on your `FPATH` before initialising `zsh`'s completion facility. Add the following to your `~/.zshrc` file:
 
 ```sh
 if type brew &>/dev/null; then
@@ -26,7 +27,7 @@ if type brew &>/dev/null; then
 fi
 ```
 
-This must be done before `compinit` is called. (Note: if you are using Oh My Zsh, it will call `compinit` for you, so this must be done before you call `oh-my-zsh.sh`.)
+This must be done before `compinit` is called. Note that if you are using Oh My Zsh, it will call `compinit` for you, so this must be done before you call `oh-my-zsh.sh`.
 
 You may also need to forcibly rebuild `zcompdump`:
 

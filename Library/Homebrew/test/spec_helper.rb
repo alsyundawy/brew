@@ -1,10 +1,38 @@
 if ENV["HOMEBREW_TESTS_COVERAGE"]
   require "simplecov"
 
-  if ENV["CODECOV_TOKEN"] || ENV["TRAVIS"]
-    require "codecov"
-    SimpleCov.formatter = SimpleCov::Formatter::Codecov
+  formatters = [SimpleCov::Formatter::HTMLFormatter]
+  if ENV["HOMEBREW_COVERALLS_REPO_TOKEN"]
+    require "coveralls"
+
+    if !ENV["HOMEBREW_COLOR"] && (ENV["HOMEBREW_NO_COLOR"] || !$stdout.tty?)
+      Coveralls::Output.no_color
+    end
+
+    formatters << Coveralls::SimpleCov::Formatter
+
+    if ENV["TEST_ENV_NUMBER"]
+      SimpleCov.at_exit do
+        result = SimpleCov.result
+        result.format! if ParallelTests.number_of_running_processes <= 1
+      end
+    end
+
+    ENV["CI_NAME"] = ENV["HOMEBREW_CI_NAME"]
+    ENV["CI_JOB_ID"] = ENV["TEST_ENV_NUMBER"] || "1"
+    ENV["CI_BUILD_NUMBER"] = ENV["HOMEBREW_CI_BUILD_NUMBER"]
+    ENV["CI_BUILD_URL"] = ENV["HOMEBREW_CI_BUILD_URL"]
+    ENV["CI_BRANCH"] = ENV["HOMEBREW_CI_BRANCH"]
+    ENV["CI_PULL_REQUEST"] = ENV["HOMEBREW_CI_PULL_REQUEST"]
+    ENV["COVERALLS_REPO_TOKEN"] = ENV["HOMEBREW_COVERALLS_REPO_TOKEN"]
   end
+
+  if ENV["HOMEBREW_AZURE_PIPELINES"]
+    require "simplecov-cobertura"
+    formatters << SimpleCov::Formatter::CoberturaFormatter
+  end
+
+  SimpleCov.formatters = SimpleCov::Formatter::MultiFormatter.new(formatters)
 end
 
 require "rspec/its"
@@ -32,7 +60,7 @@ TEST_DIRECTORIES = [
   HOMEBREW_CACHE,
   HOMEBREW_CACHE_FORMULA,
   HOMEBREW_CELLAR,
-  HOMEBREW_LOCK_DIR,
+  HOMEBREW_LOCKS,
   HOMEBREW_LOGS,
   HOMEBREW_TEMP,
 ].freeze
@@ -44,7 +72,7 @@ RSpec.configure do |config|
 
   config.filter_run_when_matching :focus
 
-  config.silence_filter_announcements = true
+  config.silence_filter_announcements = true if ENV["TEST_ENV_NUMBER"]
 
   # TODO: when https://github.com/rspec/rspec-expectations/pull/1056
   #       makes it into a stable release:
@@ -76,6 +104,16 @@ RSpec.configure do |config|
     skip "Not on macOS." unless OS.mac?
   end
 
+  config.before(:each, :needs_java) do
+    java_installed = if OS.mac?
+      Utils.popen_read("/usr/libexec/java_home", "--failfast")
+      $CHILD_STATUS.success?
+    else
+      which("java")
+    end
+    skip "Java not installed." unless java_installed
+  end
+
   config.before(:each, :needs_python) do
     skip "Python not installed." unless which("python")
   end
@@ -84,15 +122,22 @@ RSpec.configure do |config|
     skip "Requires network connection." unless ENV["HOMEBREW_TEST_ONLINE"]
   end
 
+  config.around(:each, :needs_network) do |example|
+    example.run_with_retry retry: 3, retry_wait: 1
+  end
+
   config.before(:each, :needs_svn) do
-    skip "subversion not installed." unless which "svn"
+    homebrew_bin = File.dirname HOMEBREW_BREW_FILE
+    unless %W[/usr/bin/svn #{homebrew_bin}/svn].map { |x| File.executable?(x) }.any?
+      skip "subversion not installed."
+    end
   end
 
   config.before(:each, :needs_unzip) do
     skip "unzip not installed." unless which("unzip")
   end
 
-  config.around(:each) do |example|
+  config.around do |example|
     def find_files
       Find.find(TEST_TMPDIR)
           .reject { |f| File.basename(f) == ".DS_Store" }
@@ -134,13 +179,10 @@ RSpec.configure do |config|
 
       FileUtils.rm_rf [
         TEST_DIRECTORIES.map(&:children),
+        *Keg::MUST_EXIST_SUBDIRECTORIES,
         HOMEBREW_LINKED_KEGS,
         HOMEBREW_PINNED_KEGS,
-        HOMEBREW_PREFIX/".git",
-        HOMEBREW_PREFIX/"bin",
-        HOMEBREW_PREFIX/"etc",
-        HOMEBREW_PREFIX/"share",
-        HOMEBREW_PREFIX/"opt",
+        HOMEBREW_PREFIX/"var",
         HOMEBREW_PREFIX/"Caskroom",
         HOMEBREW_LIBRARY/"Taps/homebrew/homebrew-cask",
         HOMEBREW_LIBRARY/"Taps/homebrew/homebrew-bar",
@@ -171,3 +213,14 @@ end
 RSpec::Matchers.define_negated_matcher :not_to_output, :output
 RSpec::Matchers.alias_matcher :have_failed, :be_failed
 RSpec::Matchers.alias_matcher :a_string_containing, :include
+
+RSpec::Matchers.define :a_json_string do
+  match do |actual|
+    begin
+      JSON.parse(actual)
+      true
+    rescue JSON::ParserError
+      false
+    end
+  end
+end

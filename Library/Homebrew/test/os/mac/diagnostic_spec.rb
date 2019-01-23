@@ -1,25 +1,12 @@
 require "diagnostic"
 
 describe Homebrew::Diagnostic::Checks do
-  specify "#check_for_other_package_managers" do
-    allow(MacOS).to receive(:macports_or_fink).and_return(["fink"])
-    expect(subject.check_for_other_package_managers)
-      .to match("You have MacPorts or Fink installed:")
-  end
-
   specify "#check_for_unsupported_macos" do
     ENV.delete("HOMEBREW_DEVELOPER")
     allow(OS::Mac).to receive(:prerelease?).and_return(true)
 
     expect(subject.check_for_unsupported_macos)
       .to match("We do not provide support for this pre-release version.")
-  end
-
-  specify "#check_for_beta_xquartz" do
-    allow(MacOS::XQuartz).to receive(:version).and_return("2.7.10_beta2")
-
-    expect(subject.check_for_beta_xquartz)
-      .to match("The following beta release of XQuartz is installed: 2.7.10_beta2")
   end
 
   specify "#check_if_xcode_needs_clt_installed" do
@@ -30,12 +17,6 @@ describe Homebrew::Diagnostic::Checks do
 
     expect(subject.check_if_xcode_needs_clt_installed)
       .to match("Xcode alone is not sufficient on El Capitan")
-  end
-
-  specify "#check_homebrew_prefix" do
-    # the integration tests are run in a special prefix
-    expect(subject.check_homebrew_prefix)
-      .to match("Your Homebrew's prefix is not /usr/local.")
   end
 
   specify "#check_ruby_version" do

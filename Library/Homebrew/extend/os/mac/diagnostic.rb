@@ -1,32 +1,31 @@
 module Homebrew
   module Diagnostic
     class Checks
-      undef development_tools_checks, fatal_development_tools_checks,
-            build_error_checks
+      undef fatal_build_from_source_checks, supported_configuration_checks,
+            build_from_source_checks
 
-      def development_tools_checks
+      def fatal_build_from_source_checks
         %w[
-          check_for_unsupported_macos
-          check_for_installed_developer_tools
           check_xcode_license_approved
-          check_xcode_up_to_date
-          check_clt_up_to_date
-          check_for_other_package_managers
-        ].freeze
-      end
-
-      def fatal_development_tools_checks
-        %w[
           check_xcode_minimum_version
           check_clt_minimum_version
           check_if_xcode_needs_clt_installed
         ].freeze
       end
 
-      def build_error_checks
-        (development_tools_checks + %w[
+      def supported_configuration_checks
+        %w[
+          check_build_from_source
           check_for_unsupported_macos
-        ]).freeze
+        ].freeze
+      end
+
+      def build_from_source_checks
+        %w[
+          check_for_installed_developer_tools
+          check_xcode_up_to_date
+          check_clt_up_to_date
+        ].freeze
       end
 
       def check_for_non_prefixed_findutils
@@ -60,21 +59,18 @@ module Homebrew
         <<~EOS
           You are using macOS #{MacOS.version}.
           #{who} do not provide support for this #{what}.
-          You will encounter build failures and other breakages.
-          Please create pull-requests instead of asking for help on Homebrew's
-          GitHub, Discourse, Twitter or IRC. As you are running this #{what},
-          you are responsible for resolving any issues you experience.
+          #{please_create_pull_requests(what)}
         EOS
       end
 
       def check_xcode_up_to_date
         return unless MacOS::Xcode.outdated?
 
-        # Travis CI images are going to end up outdated so don't complain when
+        # CI images are going to end up outdated so don't complain when
         # `brew test-bot` runs `brew doctor` in the CI for the Homebrew/brew
-        # repository. This only needs to support whatever CI provider
+        # repository. This only needs to support whatever CI providers
         # Homebrew/brew is currently using.
-        return if ENV["TRAVIS"]
+        return if ENV["HOMEBREW_AZURE_PIPELINES"]
 
         message = <<~EOS
           Your Xcode (#{MacOS::Xcode.version}) is outdated.
@@ -97,11 +93,11 @@ module Homebrew
       def check_clt_up_to_date
         return unless MacOS::CLT.outdated?
 
-        # Travis CI images are going to end up outdated so don't complain when
+        # CI images are going to end up outdated so don't complain when
         # `brew test-bot` runs `brew doctor` in the CI for the Homebrew/brew
-        # repository. This only needs to support whatever CI provider
+        # repository. This only needs to support whatever CI providers
         # Homebrew/brew is currently using.
-        return if ENV["TRAVIS"]
+        return if ENV["HOMEBREW_AZURE_PIPELINES"]
 
         <<~EOS
           A newer Command Line Tools release is available.
@@ -111,9 +107,11 @@ module Homebrew
 
       def check_xcode_minimum_version
         return unless MacOS::Xcode.below_minimum_version?
+        xcode = MacOS::Xcode.version.to_s
+        xcode += " => #{MacOS::Xcode.prefix}" unless MacOS::Xcode.default_prefix?
 
         <<~EOS
-          Your Xcode (#{MacOS::Xcode.version}) is too outdated.
+          Your Xcode (#{xcode}) is too outdated.
           Please update to Xcode #{MacOS::Xcode.latest_version} (or delete it).
           #{MacOS::Xcode.update_instructions}
         EOS
@@ -134,21 +132,6 @@ module Homebrew
         <<~EOS
           Xcode alone is not sufficient on #{MacOS.version.pretty_name}.
           #{DevelopmentTools.installation_instructions}
-        EOS
-      end
-
-      def check_for_other_package_managers
-        ponk = MacOS.macports_or_fink
-        return if ponk.empty?
-
-        <<~EOS
-          You have MacPorts or Fink installed:
-            #{ponk.join(", ")}
-
-          This can cause trouble. You don't have to uninstall them, but you may want to
-          temporarily move them out of the way, e.g.
-
-            sudo mv /opt/local ~/macports
         EOS
       end
 
@@ -201,19 +184,6 @@ module Homebrew
         EOS
       end
 
-      def check_for_bad_curl
-        return unless MacOS.version <= "10.8"
-        return if Formula["curl"].installed?
-
-        <<~EOS
-          The system curl on 10.8 and below is often incapable of supporting
-          modern secure connections & will fail on fetching formulae.
-
-          We recommend you:
-            brew install curl
-        EOS
-      end
-
       def check_xcode_license_approved
         # If the user installs Xcode-only, they have to approve the
         # license or no "xc*" tool will work.
@@ -221,7 +191,7 @@ module Homebrew
 
         <<~EOS
           You have not agreed to the Xcode license.
-          Builds will fail! Agree to the license by opening Xcode.app or running:
+          Agree to the license by opening Xcode.app or running:
             sudo xcodebuild -license
         EOS
       end
@@ -232,20 +202,8 @@ module Homebrew
         <<~EOS
           Your XQuartz (#{MacOS::XQuartz.version}) is outdated.
           Please install XQuartz #{MacOS::XQuartz.latest_version} (or delete the current version).
-          XQuartz can be updated using Homebrew-Cask by running
+          XQuartz can be updated using Homebrew Cask by running
             brew cask reinstall xquartz
-        EOS
-      end
-
-      def check_for_beta_xquartz
-        return unless MacOS::XQuartz.version.to_s.include?("beta")
-
-        <<~EOS
-          The following beta release of XQuartz is installed: #{MacOS::XQuartz.version}
-
-          XQuartz beta releases include address sanitization, and do not work with
-          all software; notably, wine will not work with beta releases of XQuartz.
-          We recommend only installing stable releases of XQuartz.
         EOS
       end
 
@@ -279,17 +237,6 @@ module Homebrew
         <<~EOS
           The filesystem on #{case_sensitive_vols.join(",")} appears to be case-sensitive.
           The default macOS filesystem is case-insensitive. Please report any apparent problems.
-        EOS
-      end
-
-      def check_homebrew_prefix
-        return if HOMEBREW_PREFIX.to_s == "/usr/local"
-
-        <<~EOS
-          Your Homebrew's prefix is not /usr/local.
-          You can install Homebrew anywhere you want but some bottles (binary packages)
-          can only be used with a /usr/local prefix and some formulae (packages)
-          may not build correctly with a non-/usr/local prefix.
         EOS
       end
 
@@ -352,6 +299,7 @@ module Homebrew
 
       def check_for_multiple_volumes
         return unless HOMEBREW_CELLAR.exist?
+
         volumes = Volumes.new
 
         # Find the volumes for the TMP folder & HOMEBREW_CELLAR

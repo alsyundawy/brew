@@ -31,17 +31,21 @@ module OS
 
     def latest_sdk_version
       # TODO: bump version when new Xcode macOS SDK is released
-      Version.new "10.13"
+      Version.new "10.14"
     end
 
     def latest_stable_version
-      # TODO: bump version when new macOS is released
-      Version.new "10.13"
+      # TODO: bump version when new macOS is released and also update
+      # references in docs/Installation.md and
+      # https://github.com/Homebrew/install/blob/master/install
+      Version.new "10.14"
     end
 
     def outdated_release?
-      # TODO: bump version when new macOS is released
-      version < "10.11"
+      # TODO: bump version when new macOS is released and also update
+      # references in docs/Installation.md and
+      # https://github.com/Homebrew/install/blob/master/install
+      version < "10.12"
     end
 
     def prerelease?
@@ -68,20 +72,23 @@ module OS
       @active_developer_dir ||= Utils.popen_read("/usr/bin/xcode-select", "-print-path").strip
     end
 
-    # If a specific SDK is requested
-    #   a) The requested SDK is returned, if it's installed.
-    #   b) If the requested SDK is not installed, the newest SDK (if any SDKs
+    # If a specific SDK is requested:
+    #
+    #   1. The requested SDK is returned, if it's installed.
+    #   2. If the requested SDK is not installed, the newest SDK (if any SDKs
     #      are available) is returned.
-    #   c) If no SDKs are available, nil is returned.
-    # If no specific SDK is requested
-    #   a) For Xcode >= 7, the latest SDK is returned even if the latest SDK is
+    #   3. If no SDKs are available, nil is returned.
+    #
+    # If no specific SDK is requested:
+    #
+    #   1. For Xcode >= 7, the latest SDK is returned even if the latest SDK is
     #      named after a newer OS version than the running OS. The
-    #      MACOSX_DEPLOYMENT_TARGET must be set to the OS for which you're
+    #      `MACOSX_DEPLOYMENT_TARGET` must be set to the OS for which you're
     #      actually building (usually the running OS version).
-    #      https://github.com/Homebrew/legacy-homebrew/pull/50355
-    #      https://developer.apple.com/library/ios/documentation/DeveloperTools/Conceptual/WhatsNewXcode/Articles/Introduction.html#//apple_ref/doc/uid/TP40004626
+    #      - https://github.com/Homebrew/legacy-homebrew/pull/50355
+    #      - https://developer.apple.com/library/ios/documentation/DeveloperTools/Conceptual/WhatsNewXcode/Articles/Introduction.html#//apple_ref/doc/uid/TP40004626
     #      Section "About SDKs and Simulator"
-    #   b) For Xcode < 7, proceed as if the SDK for the running OS version had
+    #   2. For Xcode < 7, proceed as if the SDK for the running OS version had
     #      specifically been requested according to the rules above.
 
     def sdk(v = nil)
@@ -94,7 +101,7 @@ module OS
       @locator.sdk_if_applicable(v)
     end
 
-    # Returns the path to an SDK or nil, following the rules set by #sdk.
+    # Returns the path to an SDK or nil, following the rules set by {.sdk}.
     def sdk_path(v = nil)
       s = sdk(v)
       s&.path
@@ -118,9 +125,10 @@ module OS
     end
 
     # See these issues for some history:
-    # https://github.com/Homebrew/legacy-homebrew/issues/13
-    # https://github.com/Homebrew/legacy-homebrew/issues/41
-    # https://github.com/Homebrew/legacy-homebrew/issues/48
+    #
+    # - https://github.com/Homebrew/legacy-homebrew/issues/13
+    # - https://github.com/Homebrew/legacy-homebrew/issues/41
+    # - https://github.com/Homebrew/legacy-homebrew/issues/48
     def macports_or_fink
       paths = []
 
@@ -150,16 +158,8 @@ module OS
       paths.uniq
     end
 
-    def prefer_64_bit?
-      if ENV["HOMEBREW_PREFER_64_BIT"] && version == :leopard
-        Hardware::CPU.is_64_bit?
-      else
-        Hardware::CPU.is_64_bit? && version > :leopard
-      end
-    end
-
     def preferred_arch
-      if prefer_64_bit?
+      if Hardware::CPU.is_64_bit?
         Hardware::CPU.arch_64_bit
       else
         Hardware::CPU.arch_32_bit
@@ -167,13 +167,11 @@ module OS
     end
 
     STANDARD_COMPILERS = {
-      "2.0"   => { gcc_4_0_build: 4061 },
-      "2.5"   => { gcc_4_0_build: 5370 },
-      "3.1.4" => { gcc_4_0_build: 5493, gcc_4_2_build: 5577 },
-      "3.2.6" => { gcc_4_0_build: 5494, gcc_4_2_build: 5666, clang: "1.7", clang_build: 77 },
-      "4.0"   => { gcc_4_0_build: 5494, gcc_4_2_build: 5666, clang: "2.0", clang_build: 137 },
-      "4.0.1" => { gcc_4_0_build: 5494, gcc_4_2_build: 5666, clang: "2.0", clang_build: 137 },
-      "4.0.2" => { gcc_4_0_build: 5494, gcc_4_2_build: 5666, clang: "2.0", clang_build: 137 },
+      "3.1.4" => { gcc_4_2_build: 5577 },
+      "3.2.6" => { gcc_4_2_build: 5666, clang: "1.7", clang_build: 77 },
+      "4.0"   => { gcc_4_2_build: 5666, clang: "2.0", clang_build: 137 },
+      "4.0.1" => { gcc_4_2_build: 5666, clang: "2.0", clang_build: 137 },
+      "4.0.2" => { gcc_4_2_build: 5666, clang: "2.0", clang_build: 137 },
       "4.2"   => { clang: "3.0", clang_build: 211 },
       "4.3"   => { clang: "3.1", clang_build: 318 },
       "4.3.1" => { clang: "3.1", clang_build: 318 },
@@ -225,6 +223,7 @@ module OS
       "9.3"   => { clang: "9.1", clang_build: 902 },
       "9.4"   => { clang: "9.1", clang_build: 902 },
       "10.0"  => { clang: "10.0", clang_build: 1000 },
+      "10.1"  => { clang: "10.0", clang_build: 1000 },
     }.freeze
 
     def compilers_standard?

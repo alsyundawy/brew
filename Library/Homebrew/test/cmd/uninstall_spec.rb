@@ -42,6 +42,8 @@ describe Homebrew do
 
   describe "::handle_unsatisfied_dependents" do
     specify "when developer" do
+      ENV["HOMEBREW_DEVELOPER"] = "1"
+
       expect {
         described_class.handle_unsatisfied_dependents(opts)
       }.to output(/Warning/).to_stderr
@@ -50,25 +52,23 @@ describe Homebrew do
     end
 
     specify "when not developer" do
-      run_as_not_developer do
-        expect {
-          described_class.handle_unsatisfied_dependents(opts)
-        }.to output(/Error/).to_stderr
+      expect {
+        described_class.handle_unsatisfied_dependents(opts)
+      }.to output(/Error/).to_stderr
 
-        expect(described_class).to have_failed
-      end
+      expect(described_class).to have_failed
     end
 
     specify "when not developer and --ignore-dependencies is specified" do
-      ARGV << "--ignore-dependencies"
+      described_class.args = described_class.args.dup if described_class.args.frozen?
+      expect(described_class.args).to receive(:ignore_dependencies?).and_return(true)
+      described_class.args.freeze
 
-      run_as_not_developer do
-        expect {
-          described_class.handle_unsatisfied_dependents(opts)
-        }.not_to output.to_stderr
+      expect {
+        described_class.handle_unsatisfied_dependents(opts)
+      }.not_to output.to_stderr
 
-        expect(described_class).not_to have_failed
-      end
+      expect(described_class).not_to have_failed
     end
   end
 end

@@ -26,7 +26,7 @@ export HOMEBREW_COMMAND_DEPTH=$((HOMEBREW_COMMAND_DEPTH + 1))
 onoe() {
   if [[ -t 2 ]] # check whether stderr is a tty.
   then
-    echo -ne "\033[4;31mError\033[0m: " >&2 # highlight Error with underline and red color
+    echo -ne "\\033[4;31mError\\033[0m: " >&2 # highlight Error with underline and red color
   else
     echo -n "Error: " >&2
   fi
@@ -53,6 +53,12 @@ brew() {
 
 git() {
   "$HOMEBREW_LIBRARY/Homebrew/shims/scm/git" "$@"
+}
+
+numeric() {
+  # Condense the exploded argument into a single return value.
+  # shellcheck disable=SC2086,SC2183
+  printf "%01d%02d%02d%02d" ${1//./ }
 }
 
 HOMEBREW_VERSION="$(git -C "$HOMEBREW_REPOSITORY" describe --tags --dirty --abbrev=7 2>/dev/null)"
@@ -89,6 +95,9 @@ then
 
   # The system Curl is too old for some modern HTTPS certificates on
   # older macOS versions.
+  #
+  # Intentionally set this variable by exploding another.
+  # shellcheck disable=SC2086,SC2183
   printf -v HOMEBREW_MACOS_VERSION_NUMERIC "%02d%02d%02d" ${HOMEBREW_MACOS_VERSION//./ }
   if [[ "$HOMEBREW_MACOS_VERSION_NUMERIC" -lt "101000" ]]
   then
@@ -96,15 +105,27 @@ then
     HOMEBREW_FORCE_BREWED_CURL="1"
   fi
 
-  # The system Git is too old for some GitHub's SSL ciphers on older
-  # macOS versions.
-  # https://github.com/blog/2507-weak-cryptographic-standards-removed
+  # Announce pre-Mavericks deprecation now
   if [[ "$HOMEBREW_MACOS_VERSION_NUMERIC" -lt "100900" ]]
+  then
+    printf "WARNING: Your version of macOS (%s) will not be able to run Homebrew when\n" "$HOMEBREW_MACOS_VERSION" >&2
+    printf "         version 2.0.0 is released (Q1 2019)!\n" >&2
+    if [[ "$HOMEBREW_MACOS_VERSION_NUMERIC" -lt "100700" ]]
+    then
+      printf "         For 10.4 - 10.6 support see: https://github.com/mistydemeo/tigerbrew\n" >&2
+    fi
+    printf "\n" >&2
+  fi
+
+  # The system Git on macOS versions before Sierra is too old for some Homebrew functionality we rely on.
+  HOMEBREW_MINIMUM_GIT_VERSION="2.14.3"
+  if [[ "$HOMEBREW_MACOS_VERSION_NUMERIC" -lt "101200" ]]
   then
     HOMEBREW_FORCE_BREWED_GIT="1"
   fi
 
   HOMEBREW_CACHE="${HOMEBREW_CACHE:-${HOME}/Library/Caches/Homebrew}"
+  HOMEBREW_LOGS="${HOMEBREW_LOGS:-${HOME}/Library/Logs/Homebrew}"
   HOMEBREW_SYSTEM_TEMP="/private/tmp"
 else
   HOMEBREW_PROCESSOR="$(uname -m)"
@@ -113,9 +134,36 @@ else
   : "${HOMEBREW_OS_VERSION:=$(uname -r)}"
   HOMEBREW_OS_USER_AGENT_VERSION="$HOMEBREW_OS_VERSION"
 
+  # Ensure the system Curl is a version that supports modern HTTPS certificates.
+  HOMEBREW_MINIMUM_CURL_VERSION="7.41.0"
+  system_curl_version_output="$($(command -v curl) --version 2>/dev/null)"
+  system_curl_name_and_version="${system_curl_version_output%% (*}"
+  if [[ $(numeric "${system_curl_name_and_version##* }") -lt $(numeric "$HOMEBREW_MINIMUM_CURL_VERSION") ]]
+  then
+    HOMEBREW_SYSTEM_CURL_TOO_OLD="1"
+    HOMEBREW_FORCE_BREWED_CURL="1"
+  fi
+
+  # Ensure the system Git is at or newer than the minimum required version.
+  # Git 2.7.4 is the version of git on Ubuntu 16.04 LTS (Xenial Xerus).
+  HOMEBREW_MINIMUM_GIT_VERSION="2.7.0"
+  system_git_version_output="$($(command -v git) --version 2>/dev/null)"
+  if [[ $(numeric "${system_git_version_output##* }") -lt $(numeric "$HOMEBREW_MINIMUM_GIT_VERSION") ]]
+  then
+    HOMEBREW_FORCE_BREWED_GIT="1"
+  fi
+
   CACHE_HOME="${XDG_CACHE_HOME:-${HOME}/.cache}"
   HOMEBREW_CACHE="${HOMEBREW_CACHE:-${CACHE_HOME}/Homebrew}"
+  HOMEBREW_LOGS="${HOMEBREW_LOGS:-${CACHE_HOME}/Homebrew/Logs}"
   HOMEBREW_SYSTEM_TEMP="/tmp"
+fi
+
+if [[ -n "$HOMEBREW_MACOS" || -n "$HOMEBREW_FORCE_HOMEBREW_ON_LINUX" ]]
+then
+  HOMEBREW_BOTTLE_DEFAULT_DOMAIN="https://homebrew.bintray.com"
+else
+  HOMEBREW_BOTTLE_DEFAULT_DOMAIN="https://linuxbrew.bintray.com"
 fi
 
 HOMEBREW_TEMP="${HOMEBREW_TEMP:-${HOMEBREW_SYSTEM_TEMP}}"
@@ -145,8 +193,9 @@ else
 fi
 
 HOMEBREW_USER_AGENT="$HOMEBREW_PRODUCT/$HOMEBREW_USER_AGENT_VERSION ($HOMEBREW_SYSTEM; $HOMEBREW_PROCESSOR $HOMEBREW_OS_USER_AGENT_VERSION)"
-HOMEBREW_CURL_VERSION="$("$HOMEBREW_CURL" --version 2>/dev/null | head -n1 | awk '{print $1"/"$2}')"
-HOMEBREW_USER_AGENT_CURL="$HOMEBREW_USER_AGENT $HOMEBREW_CURL_VERSION"
+curl_version_output="$("$HOMEBREW_CURL" --version 2>/dev/null)"
+curl_name_and_version="${curl_version_output%% (*}"
+HOMEBREW_USER_AGENT_CURL="$HOMEBREW_USER_AGENT ${curl_name_and_version// //}"
 
 # Declared in bin/brew
 export HOMEBREW_BREW_FILE
@@ -159,14 +208,18 @@ export HOMEBREW_TEMP
 # Declared in brew.sh
 export HOMEBREW_VERSION
 export HOMEBREW_CACHE
+export HOMEBREW_LOGS
 export HOMEBREW_CELLAR
 export HOMEBREW_SYSTEM
 export HOMEBREW_CURL
+export HOMEBREW_SYSTEM_CURL_TOO_OLD
 export HOMEBREW_GIT
+export HOMEBREW_MINIMUM_GIT_VERSION
 export HOMEBREW_PROCESSOR
 export HOMEBREW_PRODUCT
 export HOMEBREW_OS_VERSION
 export HOMEBREW_MACOS_VERSION
+export HOMEBREW_MACOS_VERSION_NUMERIC
 export HOMEBREW_USER_AGENT
 export HOMEBREW_USER_AGENT_CURL
 
@@ -276,7 +329,6 @@ then
   export HOMEBREW_RUBY_WARNINGS="-W0"
 fi
 
-export HOMEBREW_BOTTLE_DEFAULT_DOMAIN="https://homebrew.bintray.com"
 if [[ -z "$HOMEBREW_BOTTLE_DOMAIN" ]]
 then
   export HOMEBREW_BOTTLE_DOMAIN="$HOMEBREW_BOTTLE_DEFAULT_DOMAIN"
@@ -340,8 +392,8 @@ access to all bottles."
 EOS
 fi
 
-# Hide shellcheck complaint:
-# shellcheck source=/dev/null
+# Don't need shellcheck to follow this `source`.
+# shellcheck disable=SC1090
 source "$HOMEBREW_LIBRARY/Homebrew/utils/analytics.sh"
 setup-analytics
 
@@ -355,12 +407,15 @@ update-preinstall-timer() {
 update-preinstall() {
   [[ -z "$HOMEBREW_HELP" ]] || return
   [[ -z "$HOMEBREW_NO_AUTO_UPDATE" ]] || return
+  [[ -z "$HOMEBREW_AUTO_UPDATING" ]] || return
   [[ -z "$HOMEBREW_AUTO_UPDATE_CHECKED" ]] || return
   [[ -z "$HOMEBREW_UPDATE_PREINSTALL" ]] || return
 
   if [[ "$HOMEBREW_COMMAND" = "install" || "$HOMEBREW_COMMAND" = "upgrade" || "$HOMEBREW_COMMAND" = "tap" ||
         "$HOMEBREW_CASK_COMMAND" = "install" || "$HOMEBREW_CASK_COMMAND" = "upgrade" ]]
   then
+    export HOMEBREW_AUTO_UPDATING="1"
+
     if [[ -z "$HOMEBREW_VERBOSE" ]]
     then
       update-preinstall-timer &
@@ -377,17 +432,14 @@ update-preinstall() {
       kill "$timer_pid" 2>/dev/null
       wait "$timer_pid" 2>/dev/null
     fi
-  fi
 
-  # If brew update --preinstall did a migration then export the new locations.
-  if [[ "$HOMEBREW_REPOSITORY" = "/usr/local" &&
-        ! -d "$HOMEBREW_REPOSITORY/.git" &&
-        -d "/usr/local/Homebrew/.git" ]]
-  then
-    HOMEBREW_REPOSITORY="/usr/local/Homebrew"
-    HOMEBREW_LIBRARY="$HOMEBREW_REPOSITORY/Library"
-    export HOMEBREW_REPOSITORY
-    export HOMEBREW_LIBRARY
+    unset HOMEBREW_AUTO_UPDATING
+
+    # If we've checked for updates, we don't need to check again.
+    export HOMEBREW_AUTO_UPDATE_CHECKED="1"
+
+    # exec a new process to set any new environment variables.
+    exec "$HOMEBREW_BREW_FILE" "$@"
   fi
 
   # If we've checked for updates, we don't need to check again.
@@ -401,17 +453,17 @@ then
   # a Ruby script and avoids hard-to-debug issues if the Bash script is updated
   # at the same time as being run.
   #
-  # Hide shellcheck complaint:
-  # shellcheck source=/dev/null
+  # Don't need shellcheck to follow this `source`.
+  # shellcheck disable=SC1090
   source "$HOMEBREW_BASH_COMMAND"
-  { update-preinstall; "homebrew-$HOMEBREW_COMMAND" "$@"; exit $?; }
+  { update-preinstall "$@"; "homebrew-$HOMEBREW_COMMAND" "$@"; exit $?; }
 else
-  # Hide shellcheck complaint:
-  # shellcheck source=/dev/null
+  # Don't need shellcheck to follow this `source`.
+  # shellcheck disable=SC1090
   source "$HOMEBREW_LIBRARY/Homebrew/utils/ruby.sh"
   setup-ruby-path
 
   # Unshift command back into argument list (unless argument list was empty).
   [[ "$HOMEBREW_ARG_COUNT" -gt 0 ]] && set -- "$HOMEBREW_COMMAND" "$@"
-  { update-preinstall; exec "$HOMEBREW_RUBY_PATH" $HOMEBREW_RUBY_WARNINGS "$HOMEBREW_LIBRARY/Homebrew/brew.rb" "$@"; }
+  { update-preinstall "$@"; exec "$HOMEBREW_RUBY_PATH" $HOMEBREW_RUBY_WARNINGS "$HOMEBREW_LIBRARY/Homebrew/brew.rb" "$@"; }
 fi

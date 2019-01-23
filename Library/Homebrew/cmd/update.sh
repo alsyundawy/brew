@@ -8,8 +8,8 @@
 #:    If `--force` (or `-f`) is specified then always do a slower, full update check even
 #:    if unnecessary.
 
-# Hide shellcheck complaint:
-# shellcheck source=/dev/null
+# Don't need shellcheck to follow this `source`.
+# shellcheck disable=SC1090
 source "$HOMEBREW_LIBRARY/Homebrew/utils/lock.sh"
 
 # Replaces the function in Library/Homebrew/brew.sh to cache the Git executable to
@@ -24,7 +24,12 @@ git() {
 
 git_init_if_necessary() {
   BREW_OFFICIAL_REMOTE="https://github.com/Homebrew/brew"
-  CORE_OFFICIAL_REMOTE="https://github.com/Homebrew/homebrew-core"
+  if [[ -n "$HOMEBREW_MACOS" ]] || [[ -n "$HOMEBREW_FORCE_HOMEBREW_ON_LINUX" ]]
+  then
+    CORE_OFFICIAL_REMOTE="https://github.com/Homebrew/homebrew-core"
+  else
+    CORE_OFFICIAL_REMOTE="https://github.com/Linuxbrew/homebrew-core"
+  fi
 
   safe_cd "$HOMEBREW_REPOSITORY"
   if [[ ! -d ".git" ]]
@@ -59,39 +64,6 @@ git_init_if_necessary() {
     set +e
     trap - EXIT
   fi
-}
-
-rename_taps_dir_if_necessary() {
-  local tap_dir
-  local tap_dir_basename
-  local tap_dir_hyphens
-  local user
-  local repo
-
-  for tap_dir in "$HOMEBREW_LIBRARY"/Taps/*
-  do
-    [[ -d "$tap_dir/.git" ]] || continue
-    tap_dir_basename="${tap_dir##*/}"
-    if [[ "$tap_dir_basename" = *"-"* ]]
-    then
-      # only replace the *last* dash: yes, tap filenames suck
-      user="$(echo "${tap_dir_basename%-*}" | tr "[:upper:]" "[:lower:]")"
-      repo="$(echo "${tap_dir_basename:${#user}+1}" | tr "[:upper:]" "[:lower:]")"
-      mkdir -p "$HOMEBREW_LIBRARY/Taps/$user"
-      mv "$tap_dir" "$HOMEBREW_LIBRARY/Taps/$user/homebrew-$repo"
-
-      tap_dir_hyphens="${tap_dir_basename//[^\-]}"
-      if [[ ${#tap_dir_hyphens} -gt 1 ]]
-      then
-        echo "Homebrew changed the structure of Taps like <someuser>/<sometap>." >&2
-        echo "So you may need to rename $HOMEBREW_LIBRARY/Taps/$user/homebrew-$repo manually." >&2
-      fi
-    else
-      echo "Homebrew changed the structure of Taps like <someuser>/<sometap>. " >&2
-      echo "$tap_dir is an incorrect Tap path." >&2
-      echo "So you may need to rename it to $HOMEBREW_LIBRARY/Taps/<someuser>/homebrew-<sometap> manually." >&2
-    fi
-  done
 }
 
 repo_var() {
@@ -261,6 +233,11 @@ EOS
     then
       git checkout --force "$UPSTREAM_BRANCH" "${QUIET_ARGS[@]}"
     else
+      if [[ -n "$UPSTREAM_TAG" && "$UPSTREAM_BRANCH" != "master" ]]
+      then
+        git checkout --force -B "master" "origin/master" "${QUIET_ARGS[@]}"
+      fi
+
       git checkout --force -B "$UPSTREAM_BRANCH" "$REMOTE_REF" "${QUIET_ARGS[@]}"
     fi
   fi
@@ -273,7 +250,13 @@ EOS
 
   if [[ -z "$HOMEBREW_MERGE" ]]
   then
-    git rebase "${QUIET_ARGS[@]}" "$REMOTE_REF"
+    # Work around bug where git rebase --quiet is not quiet
+    if [[ -z "$HOMEBREW_VERBOSE" ]]
+    then
+      git rebase "$REMOTE_REF" >/dev/null
+    else
+      git rebase "${QUIET_ARGS[@]}" "$REMOTE_REF"
+    fi
   else
     git merge --no-edit --ff "${QUIET_ARGS[@]}" "$REMOTE_REF" \
       --strategy=recursive \
@@ -406,15 +389,28 @@ EOS
     QUIET_ARGS=()
   fi
 
+  if [[ -z "$HOMEBREW_CURLRC" ]]
+  then
+    CURL_DISABLE_CURLRC_ARGS=(-q)
+  else
+    CURL_DISABLE_CURLRC_ARGS=()
+  fi
+
   # only allow one instance of brew update
   lock update
 
   git_init_if_necessary
-  # rename Taps directories
-  # this procedure will be removed in the future if it seems unnecessary
-  rename_taps_dir_if_necessary
 
   safe_cd "$HOMEBREW_REPOSITORY"
+
+  # if an older system had a newer curl installed, change each repo's remote URL from GIT to HTTPS
+  if [[ -n "$HOMEBREW_SYSTEM_CURL_TOO_OLD" &&
+        -x "$HOMEBREW_PREFIX/opt/curl/bin/curl" &&
+        "$(git config remote.origin.url)" =~ ^git:// ]]
+  then
+    git config remote.origin.url "$BREW_OFFICIAL_REMOTE"
+    git config -f "$HOMEBREW_LIBRARY/Taps/homebrew/homebrew-core/.git/config" remote.origin.url "$CORE_OFFICIAL_REMOTE"
+  fi
 
   # kill all of subprocess on interrupt
   trap '{ /usr/bin/pkill -P $$; wait; exit 130; }' SIGINT
@@ -481,8 +477,10 @@ EOS
           GITHUB_API_ENDPOINT="commits/$UPSTREAM_BRANCH_DIR"
         fi
 
-        UPSTREAM_SHA_HTTP_CODE="$("$HOMEBREW_CURL" --silent --max-time 3 \
-           --output /dev/null --write-out "%{http_code}" \
+        UPSTREAM_SHA_HTTP_CODE="$("$HOMEBREW_CURL" \
+           "${CURL_DISABLE_CURLRC_ARGS[@]}" \
+           --silent --max-time 3 \
+           --location --output /dev/null --write-out "%{http_code}" \
            --dump-header "$DIR/.git/GITHUB_HEADERS" \
            --user-agent "$HOMEBREW_USER_AGENT_CURL" \
            --header "Accept: $GITHUB_API_ACCEPT" \

@@ -5,14 +5,26 @@ end
 std_trap = trap("INT") { exit! 130 } # no backtrace thanks
 
 # check ruby version before requiring any modules.
-RUBY_VERSION_SPLIT = RUBY_VERSION.split "."
-RUBY_X = RUBY_VERSION_SPLIT[0].to_i
-RUBY_Y = RUBY_VERSION_SPLIT[1].to_i
+RUBY_X, RUBY_Y, = RUBY_VERSION.split(".").map(&:to_i)
 if RUBY_X < 2 || (RUBY_X == 2 && RUBY_Y < 3)
   raise "Homebrew must be run under Ruby 2.3! You're running #{RUBY_VERSION}."
 end
 
-require_relative "global"
+begin
+  require_relative "global"
+rescue MissingEnvironmentVariables => e
+  raise e if ENV["HOMEBREW_MISSING_ENV_RETRY"]
+
+  if ENV["HOMEBREW_DEVELOPER"]
+    $stderr.puts <<~EOS
+      Warning: #{e.message}
+      Retrying with `exec #{ENV["HOMEBREW_BREW_FILE"]}`!
+    EOS
+  end
+
+  ENV["HOMEBREW_MISSING_ENV_RETRY"] = "1"
+  exec ENV["HOMEBREW_BREW_FILE"], *ARGV
+end
 
 begin
   trap("INT", std_trap) # restore default CTRL-C handler
@@ -37,8 +49,8 @@ begin
   homebrew_path = PATH.new(ENV["HOMEBREW_PATH"])
 
   # Add SCM wrappers.
-  path.append(HOMEBREW_SHIMS_PATH/"scm")
-  homebrew_path.append(HOMEBREW_SHIMS_PATH/"scm")
+  path.prepend(HOMEBREW_SHIMS_PATH/"scm")
+  homebrew_path.prepend(HOMEBREW_SHIMS_PATH/"scm")
 
   ENV["PATH"] = path
 
@@ -49,8 +61,10 @@ begin
       internal_dev_cmd = require? HOMEBREW_LIBRARY_PATH/"dev-cmd"/cmd
       internal_cmd = internal_dev_cmd
       if internal_dev_cmd && !ARGV.homebrew_developer?
-        system "git", "config", "--file=#{HOMEBREW_REPOSITORY}/.git/config",
-                                "--replace-all", "homebrew.devcmdrun", "true"
+        if (HOMEBREW_REPOSITORY/".git/config").exist?
+          system "git", "config", "--file=#{HOMEBREW_REPOSITORY}/.git/config",
+                                  "--replace-all", "homebrew.devcmdrun", "true"
+        end
         ENV["HOMEBREW_DEV_CMD_RUN"] = "1"
       end
     end
@@ -75,12 +89,13 @@ begin
     # `Homebrew.help` never returns, except for external/unknown commands.
   end
 
-  # Migrate LinkedKegs/PinnedKegs if update didn't already do so
-  migrate_legacy_keg_symlinks_if_necessary
-
   # Uninstall old brew-cask if it's still around; we just use the tap now.
   if cmd == "cask" && (HOMEBREW_CELLAR/"brew-cask").exist?
     system(HOMEBREW_BREW_FILE, "uninstall", "--force", "brew-cask")
+  end
+
+  if ENV["HOMEBREW_BUILD_FROM_SOURCE"]
+    odeprecated("HOMEBREW_BUILD_FROM_SOURCE", "--build-from-source")
   end
 
   if internal_cmd
@@ -126,6 +141,7 @@ rescue BuildError => e
   exit 1
 rescue RuntimeError, SystemCallError => e
   raise if e.message.empty?
+
   onoe e
   $stderr.puts e.backtrace if ARGV.debug?
   exit 1

@@ -2,11 +2,6 @@ require_relative "../cli_parser"
 
 describe Homebrew::CLI::Parser do
   describe "test switch options" do
-    before do
-      allow(ENV).to receive(:[]).with("HOMEBREW_PRY").and_return("1")
-      allow(ENV).to receive(:[]).with("HOMEBREW_VERBOSE")
-    end
-
     subject(:parser) {
       described_class.new do
         switch :verbose, description: "Flag for verbosity"
@@ -14,6 +9,11 @@ describe Homebrew::CLI::Parser do
         switch "--pry", env: :pry
       end
     }
+
+    before do
+      allow(ENV).to receive(:[])
+      allow(ENV).to receive(:[]).with("HOMEBREW_PRY").and_return("1")
+    end
 
     it "parses short option" do
       parser.parse(["-v"])
@@ -38,13 +38,19 @@ describe Homebrew::CLI::Parser do
       expect(Homebrew.args.more_verbose?).to be nil
     end
 
-    it "raises an exception when an invalid option is passed" do
+    it "raises an exception and outputs help text when an invalid option is passed" do
       expect { parser.parse(["--random"]) }.to raise_error(OptionParser::InvalidOption, /--random/)
+                                           .and output(/Usage: brew/).to_stderr
     end
 
     it "maps environment var to an option" do
       parser.parse([])
       expect(Homebrew.args.pry?).to be true
+    end
+
+    it ":verbose with custom description" do
+      _, _, _, desc = parser.processed_options.find { |short, _| short == "-v" }
+      expect(desc).to eq "Flag for verbosity"
     end
   end
 
@@ -71,6 +77,20 @@ describe Homebrew::CLI::Parser do
     end
   end
 
+  describe "test short flag options" do
+    subject(:parser) {
+      described_class.new do
+        flag "-f", "--filename=", description: "Name of the file"
+      end
+    }
+
+    it "parses a short flag option with its argument" do
+      parser.parse(["--filename=random.txt"])
+      expect(Homebrew.args.filename).to eq "random.txt"
+      expect(Homebrew.args.f).to eq "random.txt"
+    end
+  end
+
   describe "test constraints for flag options" do
     subject(:parser) {
       described_class.new do
@@ -89,6 +109,7 @@ describe Homebrew::CLI::Parser do
 
     it "raises exception on depends_on constraint violation" do
       expect { parser.parse(["--flag2=flag2"]) }.to raise_error(Homebrew::CLI::OptionConstraintError)
+      expect { parser.parse(["--flag4=flag4"]) }.to raise_error(Homebrew::CLI::OptionConstraintError)
     end
 
     it "raises exception for conflict violation" do
@@ -139,6 +160,7 @@ describe Homebrew::CLI::Parser do
 
     it "raises exception on depends_on constraint violation" do
       expect { parser.parse(["--switch-c"]) }.to raise_error(Homebrew::CLI::OptionConstraintError)
+      expect { parser.parse(["--switch-d"]) }.to raise_error(Homebrew::CLI::OptionConstraintError)
     end
 
     it "raises exception for conflict violation" do
@@ -154,6 +176,20 @@ describe Homebrew::CLI::Parser do
     it "raises no exception for optional dependency" do
       parser.parse(["--switch-b"])
       expect(Homebrew.args.switch_b?).to be true
+    end
+  end
+
+  describe "test immutability of args" do
+    subject(:parser) {
+      described_class.new do
+        switch "-a", "--switch-a"
+        switch "-b", "--switch-b"
+      end
+    }
+
+    it "raises exception upon Homebrew.args mutation" do
+      parser.parse(["--switch-a"])
+      expect { parser.parse(["--switch-b"]) }.to raise_error(RuntimeError, /can't modify frozen OpenStruct/)
     end
   end
 end

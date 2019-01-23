@@ -20,7 +20,7 @@ describe Tap do
   def setup_tap_files
     formula_file.write <<~RUBY
       class Foo < Formula
-        url "https://example.com/foo-1.0.tar.gz"
+        url "https://brew.sh/foo-1.0.tar.gz"
       end
     RUBY
 
@@ -214,7 +214,9 @@ describe Tap do
       touch subject.path/".git/shallow"
       expect(already_tapped_tap).to be_installed
       wrong_remote = "#{subject.remote}-oops"
-      expect { already_tapped_tap.install clone_target: wrong_remote, full_clone: true }.to raise_error(TapRemoteMismatchError)
+      expect {
+        already_tapped_tap.install clone_target: wrong_remote, full_clone: true
+      }.to raise_error(TapRemoteMismatchError)
     end
 
     it "raises an error when the Tap is already unshallow" do
@@ -366,7 +368,7 @@ describe CoreTap do
     formula_file = subject.formula_dir/"foo.rb"
     formula_file.write <<~RUBY
       class Foo < Formula
-        url "https://example.com/foo-1.0.tar.gz"
+        url "https://brew.sh/foo-1.0.tar.gz"
       end
     RUBY
 
