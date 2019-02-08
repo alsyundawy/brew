@@ -104,7 +104,7 @@ module Cask
     def check_conflicts
       return unless @cask.conflicts_with
 
-      @cask.conflicts_with.cask.each do |conflicting_cask|
+      @cask.conflicts_with[:cask].each do |conflicting_cask|
         begin
           conflicting_cask = CaskLoader.load(conflicting_cask)
           if conflicting_cask.installed?
@@ -216,6 +216,13 @@ module Cask
 
           odebug "Reverting installation of artifact of class #{artifact.class}"
           artifact.uninstall_phase(command: @command, verbose: verbose?, force: force?)
+        end
+
+        already_installed_artifacts.each do |artifact|
+          next unless artifact.respond_to?(:post_uninstall_phase)
+
+          odebug "Reverting installation of artifact of class #{artifact.class}"
+          artifact.post_uninstall_phase(command: @command, verbose: verbose?, force: force?)
         end
       ensure
         purge_versioned_files
@@ -425,8 +432,17 @@ module Cask
       artifacts.each do |artifact|
         next unless artifact.respond_to?(:uninstall_phase)
 
-        odebug "Un-installing artifact of class #{artifact.class}"
+        odebug "Uninstalling artifact of class #{artifact.class}"
         artifact.uninstall_phase(command: @command, verbose: verbose?, skip: clear, force: force?, upgrade: upgrade?)
+      end
+
+      artifacts.each do |artifact|
+        next unless artifact.respond_to?(:post_uninstall_phase)
+
+        odebug "Post-uninstalling artifact of class #{artifact.class}"
+        artifact.post_uninstall_phase(
+          command: @command, verbose: verbose?, skip: clear, force: force?, upgrade: upgrade?,
+        )
       end
     end
 
