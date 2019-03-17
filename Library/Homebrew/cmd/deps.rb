@@ -10,37 +10,42 @@ module Homebrew
       usage_banner <<~EOS
         `deps` [<options>] <formula>
 
-        Show dependencies for <formula>. When given multiple formula arguments,
-        show the intersection of dependencies for <formula>.
+        Show dependencies for <formula>. Additional options specific to <formula>
+        may be appended to the command. When given multiple formula arguments,
+        show the intersection of dependencies for each formula.
       EOS
-      switch "--1",
-        description: "Only show dependencies one level down, instead of recursing."
       switch "-n",
         description: "Show dependencies in topological order."
+      switch "--1",
+        description: "Only show dependencies one level down, instead of recursing."
       switch "--union",
-        description: "Show the union of dependencies for <formula>, instead of the intersection."
+        description: "Show the union of dependencies for multiple <formula>, instead of the intersection."
       switch "--full-name",
         description: "List dependencies by their full name."
-      switch "--installed",
-        description: "Only list those dependencies that are currently installed."
-      switch "--all",
-        description: "List all the dependencies for all available formulae."
       switch "--include-build",
-        description: "Show `:build` type dependencies for <formula>."
+        description: "Include `:build` dependencies for <formula>."
       switch "--include-optional",
-        description: "Show `:optional` dependencies for <formula>."
+        description: "Include `:optional` dependencies for <formula>."
       switch "--include-test",
-        description: "Show `:test` dependencies for <formula> (non-recursive)."
+        description: "Include `:test` dependencies for <formula> (non-recursive)."
       switch "--skip-recommended",
-        description: "Skip `:recommended` type dependencies for <formula>."
+        description: "Skip `:recommended` dependencies for <formula>."
       switch "--include-requirements",
         description: "Include requirements in addition to dependencies for <formula>."
       switch "--tree",
-        description: "Show dependencies as a tree. When given multiple formula arguments "\
-                     "output individual trees for every formula."
+        description: "Show dependencies as a tree. When given multiple formula arguments, "\
+                     "show individual trees for each formula."
+      switch "--annotate",
+        description: "Mark any build, test, optional, or recommended dependencies as "\
+                     "such in the output."
+      switch "--installed",
+        description: "List dependencies for formulae that are currently installed. If <formula> is "\
+                     "specified, list only its dependencies that are currently installed."
+      switch "--all",
+        description: "List dependencies for all available formulae."
       switch "--for-each",
-        description: "Switch into the mode used by `deps --all`, but only list dependencies "\
-                     "for specified formula one specified formula per line. This is used for "\
+        description: "Switch into the mode used by the `--all` option, but only list dependencies "\
+                     "for the specified <formula>, one formula per line. This is used for "\
                      "debugging the `--installed`/`--all` display mode."
       switch :verbose
       switch :debug
@@ -58,26 +63,28 @@ module Homebrew
       topo_order?: args.n?,
       union?:      args.union?,
       for_each?:   args.for_each?,
+      recursive?:  !args.send("1?"),
     )
 
     if mode.tree?
       if mode.installed?
-        puts_deps_tree Formula.installed.sort, !args.send("1?")
+        puts_deps_tree Formula.installed.sort, mode.recursive?
       else
         raise FormulaUnspecifiedError if args.remaining.empty?
 
-        puts_deps_tree ARGV.formulae, !args.send("1?")
+        puts_deps_tree ARGV.formulae, mode.recursive?
       end
       return
     elsif mode.all?
-      puts_deps Formula.sort
+      puts_deps Formula.sort, mode.recursive?
       return
     elsif !args.remaining.empty? && mode.for_each?
-      puts_deps ARGV.formulae
+      puts_deps ARGV.formulae, mode.recursive?
       return
     end
 
-    @only_installed_arg = args.installed? &&
+    @only_installed_arg = mode.installed? &&
+                          mode.recursive? &&
                           !args.include_build? &&
                           !args.include_test? &&
                           !args.include_optional? &&
@@ -86,11 +93,11 @@ module Homebrew
     if args.remaining.empty?
       raise FormulaUnspecifiedError unless mode.installed?
 
-      puts_deps Formula.installed.sort
+      puts_deps Formula.installed.sort, mode.recursive?
       return
     end
 
-    all_deps = deps_for_formulae(ARGV.formulae, !args.send("1?"), &(mode.union? ? :| : :&))
+    all_deps = deps_for_formulae(ARGV.formulae, mode.recursive?, &(mode.union? ? :| : :&))
     all_deps = condense_requirements(all_deps)
     all_deps.select!(&:installed?) if mode.installed?
     all_deps.map!(&method(:dep_display_name))
@@ -120,10 +127,11 @@ module Homebrew
     end
 
     if args.annotate?
-      str = "#{str}  [build]" if dep.build?
-      str = "#{str}  [test]" if dep.test?
-      str = "#{str}  [optional]" if dep.optional?
-      str = "#{str}  [recommended]" if dep.recommended?
+      str = "#{str} " if args.tree?
+      str = "#{str} [build]" if dep.build?
+      str = "#{str} [test]" if dep.test?
+      str = "#{str} [optional]" if dep.optional?
+      str = "#{str} [recommended]" if dep.recommended?
     end
 
     str
@@ -149,9 +157,9 @@ module Homebrew
     formulae.map { |f| deps_for_formula(f, recursive) }.reduce(&block)
   end
 
-  def puts_deps(formulae)
+  def puts_deps(formulae, recursive = false)
     formulae.each do |f|
-      deps = deps_for_formula(f)
+      deps = deps_for_formula(f, recursive)
       deps = condense_requirements(deps)
       deps.sort_by!(&:name)
       deps.map!(&method(:dep_display_name))
@@ -200,9 +208,7 @@ module Homebrew
         "│   "
       end
 
-      if dep.is_a? Dependency
-        recursive_deps_tree(Formulary.factory(dep.name), prefix + prefix_addition, true)
-      end
+      recursive_deps_tree(Formulary.factory(dep.name), prefix + prefix_addition, true) if dep.is_a? Dependency
     end
 
     @dep_stack.pop

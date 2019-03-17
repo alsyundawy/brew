@@ -35,13 +35,13 @@ Good luck!
 Please report security issues to our [HackerOne](https://hackerone.com/homebrew/).
 
 ## Who Are You?
-Homebrew's project lead is [Mike McQuaid](https://github.com/MikeMcQuaid).
+Homebrew's [Project Leader](https://github.com/Homebrew/homebrew-governance-private/blob/master/GOVERNANCE.md#6-project-leader) is [Mike McQuaid](https://github.com/MikeMcQuaid).
 
-Homebrew's project leadership committee is [Misty De Meo](https://github.com/mistydemeo), [Shaun Jackman](https://github.com/sjackman), [Jonathan Chang](https://github.com/jonchang), [Mike McQuaid](https://github.com/MikeMcQuaid) and [Markus Reiter](https://github.com/reitermarkus).
+Homebrew's [Project Leadership Committee](https://docs.brew.sh/Homebrew-Governance#4-project-leadership-committee) is [Misty De Meo](https://github.com/mistydemeo), [Shaun Jackman](https://github.com/sjackman), [Jonathan Chang](https://github.com/jonchang), [Mike McQuaid](https://github.com/MikeMcQuaid) and [Markus Reiter](https://github.com/reitermarkus).
 
-Homebrew's technical steering committee is [Michka Popoff](https://github.com/imichka), [FX Coudert](https://github.com/fxcoudert), [Markus Reiter](https://github.com/reitermarkus), [Misty De Meo](https://github.com/mistydemeo) and [Mike McQuaid](https://github.com/MikeMcQuaid).
+Homebrew's [Technical Steering Committee](https://docs.brew.sh/Homebrew-Governance#7-technical-steering-committee) is [Michka Popoff](https://github.com/imichka), [FX Coudert](https://github.com/fxcoudert), [Markus Reiter](https://github.com/reitermarkus), [Misty De Meo](https://github.com/mistydemeo) and [Mike McQuaid](https://github.com/MikeMcQuaid).
 
-Homebrew/brew's Linux support (and Linuxbrew) maintainers are [Michka Popoff](https://github.com/imichka) and [Shaun Jackman](https://github.com/sjackman).
+Homebrew/brew's Linux maintainers are [Michka Popoff](https://github.com/imichka) and [Shaun Jackman](https://github.com/sjackman).
 
 Homebrew's other current maintainers are [Claudia Pellegrino](https://github.com/claui), [Chongyu Zhu](https://github.com/lembacon), [Vitor Galvao](https://github.com/vitorgalvao), [Gautham Goli](https://github.com/GauthamGoli), [Steven Peters](https://github.com/scpeters), [William Woodruff](https://github.com/woodruffw), [Igor Kapkov](https://github.com/igas), [Izaak Beekman](https://github.com/zbeekman), [Sean Molenaar](https://github.com/SMillerDev), [Jan Viljanen](https://github.com/javian), [Jason Tedor](https://github.com/jasontedor), [Eric Knibbe](https://github.com/EricFromCanada), [Viktor Szakats](https://github.com/vszakats), [Thierry Moisan](https://github.com/moisan), [Steven Peters](https://github.com/scpeters) and [Tom Schoonjans](https://github.com/tschoonj).
 

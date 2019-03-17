@@ -57,7 +57,6 @@ module Cask
       :appcast,
       :artifacts,
       :auto_updates,
-      :caskroom_path,
       :caveats,
       :conflicts_with,
       :container,
@@ -132,9 +131,7 @@ module Cask
 
       return @language = nil if @language_blocks.nil? || @language_blocks.empty?
 
-      if @language_blocks.default.nil?
-        raise CaskInvalidError.new(cask, "No default language specified.")
-      end
+      raise CaskInvalidError.new(cask, "No default language specified.") if @language_blocks.default.nil?
 
       locales = MacOS.languages
                      .map do |language|
@@ -226,7 +223,7 @@ module Cask
     end
 
     def caskroom_path
-      @caskroom_path ||= Caskroom.path.join(token)
+      @cask.caskroom_path
     end
 
     def staged_path

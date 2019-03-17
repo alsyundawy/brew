@@ -229,11 +229,6 @@ shared_examples "#uninstall_phase or #zap_phase" do
         allow(fake_system_command).to receive(:run).with(any_args).and_call_original
 
         expect(fake_system_command).to receive(:run).with(
-          "/bin/chmod",
-          args: ["--", "+x", script_pathname],
-        )
-
-        expect(fake_system_command).to receive(:run).with(
           cask.staged_path.join("MyFancyPkg", "FancyUninstaller.tool"),
           args:         ["--please"],
           must_succeed: true,
@@ -255,7 +250,7 @@ shared_examples "#uninstall_phase or #zap_phase" do
         .with(
           "osascript",
         args: ["-e", 'tell application "System Events" to delete every login item whose name is "Fancy"'],
-      )
+        )
         .and_return(instance_double("SystemCommand::Result"))
 
       subject.public_send(:"#{artifact_dsl_key}_phase", command: fake_system_command)

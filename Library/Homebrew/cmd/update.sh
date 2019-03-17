@@ -2,8 +2,11 @@
 #:
 #:  Fetch the newest version of Homebrew and all formulae from GitHub using `git`(1) and perform any necessary migrations.
 #:
-#:       --merge                         `git merge` is used to include updates (rather than `git rebase`).
-#:       --force                         Always do a slower, full update check (even if unnecessary).
+#:          --merge                      `git merge` is used to include updates (rather than `git rebase`).
+#:      -f, --force                      Always do a slower, full update check (even if unnecessary).
+#:      -v, --verbose                    Print the directories checked and `git` operations performed.
+#:      -d, --debug                      Display a trace of all shell commands as they are executed.
+#:      -h, --help                       Show this message.
 
 # Don't need shellcheck to follow this `source`.
 # shellcheck disable=SC1090
@@ -25,7 +28,7 @@ git_init_if_necessary() {
   then
     CORE_OFFICIAL_REMOTE="https://github.com/Homebrew/homebrew-core"
   else
-    CORE_OFFICIAL_REMOTE="https://github.com/Linuxbrew/homebrew-core"
+    CORE_OFFICIAL_REMOTE="https://github.com/Homebrew/linuxbrew-core"
   fi
 
   safe_cd "$HOMEBREW_REPOSITORY"
@@ -306,6 +309,7 @@ homebrew-update() {
       -*)
         [[ "$option" = *v* ]] && HOMEBREW_VERBOSE=1
         [[ "$option" = *d* ]] && HOMEBREW_DEBUG=1
+        [[ "$option" = *f* ]] && HOMEBREW_UPDATE_FORCE=1
         ;;
       *)
         odie <<EOS
@@ -510,7 +514,13 @@ EOS
         if ! git fetch --tags --force "${QUIET_ARGS[@]}" origin \
           "refs/heads/$UPSTREAM_BRANCH_DIR:refs/remotes/origin/$UPSTREAM_BRANCH_DIR"
         then
-          echo "Fetching $DIR failed!" >>"$update_failed_file"
+          if [[ "$UPSTREAM_SHA_HTTP_CODE" = "404" ]]
+          then
+            TAP="${DIR#$HOMEBREW_LIBRARY/Taps/}"
+            echo "$TAP does not exist! Run 'brew untap $TAP'" >>"$update_failed_file"
+          else
+            echo "Fetching $DIR failed!" >>"$update_failed_file"
+          fi
         fi
       fi
     ) &

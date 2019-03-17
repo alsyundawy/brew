@@ -1,4 +1,5 @@
 require "utils/bottles"
+require "utils/gems"
 require "formula"
 require "cask/cask_loader"
 require "set"
@@ -58,7 +59,11 @@ module CleanupRefinement
     def stale?(scrub = false)
       return false unless resolved_path.file?
 
-      stale_formula?(scrub) || stale_cask?(scrub)
+      if dirname.basename.to_s == "Cask"
+        stale_cask?(scrub)
+      else
+        stale_formula?(scrub)
+      end
     end
 
     private
@@ -112,17 +117,13 @@ module CleanupRefinement
     def stale_cask?(scrub)
       return false unless name = basename.to_s[/\A(.*?)\-\-/, 1]
 
-      return if dirname.basename.to_s != "Cask"
-
       cask = begin
         Cask::CaskLoader.load(name)
       rescue Cask::CaskUnavailableError
         return false
       end
 
-      unless basename.to_s.match?(/\A#{Regexp.escape(name)}\-\-#{Regexp.escape(cask.version)}\b/)
-        return true
-      end
+      return true unless basename.to_s.match?(/\A#{Regexp.escape(name)}\-\-#{Regexp.escape(cask.version)}\b/)
 
       return true if scrub && !cask.versions.include?(cask.version)
 
@@ -180,25 +181,33 @@ module Homebrew
       return false unless periodic_clean_due?
 
       ohai "`brew cleanup` has not been run in #{CLEANUP_DEFAULT_DAYS} days, running now..."
-      clean!(quiet: true)
+      clean!(quiet: true, periodic: true)
     end
 
-    def clean!(quiet: false)
+    def clean!(quiet: false, periodic: false)
       if args.empty?
         Formula.installed.sort_by(&:name).each do |formula|
           cleanup_formula(formula, quiet: quiet)
         end
         cleanup_cache
         cleanup_logs
-        cleanup_portable_ruby
         cleanup_lockfiles
-        return if dry_run?
-
-        cleanup_old_cache_db
-        rm_ds_store
         prune_prefix_symlinks_and_directories
-        HOMEBREW_CACHE.mkpath
-        FileUtils.touch PERIODIC_CLEAN_FILE
+
+        unless dry_run?
+          cleanup_old_cache_db
+          rm_ds_store
+          HOMEBREW_CACHE.mkpath
+          FileUtils.touch PERIODIC_CLEAN_FILE
+        end
+
+        # Cleaning up Ruby needs to be done last to avoid requiring additional
+        # files afterwards. Additionally, don't allow it on periodic cleans to
+        # avoid having to try to do a `brew install` when we've just deleted
+        # the running Ruby process...
+        return if periodic
+
+        cleanup_portable_ruby
       else
         args.each do |arg|
           formula = begin
@@ -246,6 +255,7 @@ module Homebrew
 
     def cleanup_logs
       return unless HOMEBREW_LOGS.directory?
+
       logs_days = if days > CLEANUP_DEFAULT_DAYS
         CLEANUP_DEFAULT_DAYS
       else
@@ -327,9 +337,7 @@ module Homebrew
     def cleanup_lockfiles(*lockfiles)
       return if dry_run?
 
-      if lockfiles.empty? && HOMEBREW_LOCKS.directory?
-        lockfiles = HOMEBREW_LOCKS.children.select(&:file?)
-      end
+      lockfiles = HOMEBREW_LOCKS.children.select(&:file?) if lockfiles.empty? && HOMEBREW_LOCKS.directory?
 
       lockfiles.each do |file|
         next unless file.readable?
@@ -361,6 +369,7 @@ module Homebrew
       portable_ruby_glob = "#{portable_ruby_path}/*.*"
       Pathname.glob(portable_ruby_glob).each do |path|
         next if !use_system_ruby && portable_ruby_version == path.basename.to_s
+
         if dry_run?
           puts "Would remove: #{path} (#{path.abv})"
         else

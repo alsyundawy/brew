@@ -2,6 +2,9 @@ require "optparse"
 require "ostruct"
 require "set"
 
+COMMAND_DESC_WIDTH = 80
+OPTION_DESC_WIDTH = 43
+
 module Homebrew
   module CLI
     class Parser
@@ -27,8 +30,8 @@ module Homebrew
         Homebrew.args.instance_eval { undef tap }
         @constraints = []
         @conflicts = []
+        @switch_sources = {}
         @processed_options = []
-        @desc_line_length = 43
         @hide_from_man_page = false
         instance_eval(&block)
         post_initialize
@@ -51,19 +54,19 @@ module Homebrew
         end
         process_option(*names, description)
         @parser.on(*names, *wrap_option_desc(description)) do
-          enable_switch(*names)
+          enable_switch(*names, from: :args)
         end
 
         names.each do |name|
           set_constraints(name, required_for: required_for, depends_on: depends_on)
         end
 
-        enable_switch(*names) if !env.nil? && !ENV["HOMEBREW_#{env.to_s.upcase}"].nil?
+        enable_switch(*names, from: :env) if !env.nil? && !ENV["HOMEBREW_#{env.to_s.upcase}"].nil?
       end
       alias switch_option switch
 
       def usage_banner(text)
-        @parser.banner = "#{text}\n"
+        @parser.banner = Formatter.wrap("#{text}\n", COMMAND_DESC_WIDTH)
       end
 
       def usage_banner_text
@@ -134,6 +137,7 @@ module Homebrew
         check_constraint_violations
         Homebrew.args[:remaining] = remaining_args
         Homebrew.args.freeze
+        cmdline_args.freeze
         @parser
       end
 
@@ -152,6 +156,7 @@ module Homebrew
       def formula_options
         ARGV.formulae.each do |f|
           next if f.options.empty?
+
           f.options.each do |o|
             name = o.flag
             description = "`#{f.name}`: #{o.description}"
@@ -172,9 +177,16 @@ module Homebrew
 
       private
 
-      def enable_switch(*names)
+      def enable_switch(*names, from:)
         names.each do |name|
+          @switch_sources[option_to_name(name)] = from
           Homebrew.args["#{option_to_name(name)}?"] = true
+        end
+      end
+
+      def disable_switch(*names)
+        names.each do |name|
+          Homebrew.args.delete_field("#{option_to_name(name)}?")
         end
       end
 
@@ -188,7 +200,7 @@ module Homebrew
       end
 
       def wrap_option_desc(desc)
-        Formatter.wrap(desc, @desc_line_length).split("\n")
+        Formatter.wrap(desc, OPTION_DESC_WIDTH).split("\n")
       end
 
       def set_constraints(name, depends_on:, required_for:)
@@ -211,9 +223,7 @@ module Homebrew
           if :mandatory.equal?(constraint_type) && primary_passed && !secondary_passed
             raise OptionConstraintError.new(primary, secondary)
           end
-          if secondary_passed && !primary_passed
-            raise OptionConstraintError.new(primary, secondary, missing: true)
-          end
+          raise OptionConstraintError.new(primary, secondary, missing: true) if secondary_passed && !primary_passed
         end
       end
 
@@ -225,7 +235,14 @@ module Homebrew
 
           next if violations.count < 2
 
-          raise OptionConflictError, violations.map(&method(:name_to_option))
+          env_var_options = violations.select do |option|
+            @switch_sources[option_to_name(option)] == :env
+          end
+
+          select_cli_arg = violations.count - env_var_options.count == 1
+          raise OptionConflictError, violations.map(&method(:name_to_option)) unless select_cli_arg
+
+          env_var_options.each(&method(:disable_switch))
         end
       end
 

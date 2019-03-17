@@ -13,7 +13,7 @@ module Homebrew
         List all installed formulae.
       EOS
       switch "--full-name",
-        description: "Print formulae with fully-qualified names.  If `--full-name` is not "\
+        description: "Print formulae with fully-qualified names. If `--full-name` is not "\
                      "passed, other options (i.e. `-1`, `-l`, `-t` and `-r`) are passed to `ls` "\
                      "which produces the actual output."
       switch "--unbrewed",
@@ -133,9 +133,7 @@ module Homebrew
       pinned_versions = {}
       names.sort.each do |d|
         keg_pin = (HOMEBREW_PINNED_KEGS/d.basename.to_s)
-        if keg_pin.exist? || keg_pin.symlink?
-          pinned_versions[d] = keg_pin.readlink.basename.to_s
-        end
+        pinned_versions[d] = keg_pin.readlink.basename.to_s if keg_pin.exist? || keg_pin.symlink?
       end
       pinned_versions.each do |d, version|
         puts d.basename.to_s.concat(args.versions? ? " #{version}" : "")

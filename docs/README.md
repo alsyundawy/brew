@@ -1,13 +1,14 @@
 # Documentation
 
 ## Users
+
 - [`brew` man-page (command documentation)](Manpage.md)
 - [Troubleshooting](Troubleshooting.md)
 - [Installation](Installation.md)
 - [Frequently Asked Questions](FAQ.md)
 - [Common Issues](Common-Issues.md)
 - [`brew` Shell Completion](Shell-Completion.md)
-- [Linuxbrew: Homebrew on Linux and Windows 10](Linuxbrew.md)
+- [Homebrew on Linux](Homebrew-on-Linux.md)
 
 - [Tips and Tricks](Tips-N'-Tricks.md)
 - [Bottles (binary packages)](Bottles.md)
@@ -27,6 +28,7 @@
 - [Kickstarter Supporters](Kickstarter-Supporters.md)
 
 ## Contributors
+
 - [How To Open A Pull Request (and get it merged)](How-To-Open-a-Homebrew-Pull-Request.md)
 - [Formula Cookbook](Formula-Cookbook.md)
 - [Acceptable Formulae](Acceptable-Formulae.md)
@@ -41,8 +43,14 @@
 - [Prose Style Guidelines](Prose-Style-Guidelines.md)
 
 ## Maintainers
+
 - [New Maintainer Checklist](New-Maintainer-Checklist.md)
 - [Maintainers: Avoiding Burnout](Maintainers-Avoiding-Burnout.md)
 - [Maintainer Guidelines](Maintainer-Guidelines.md)
 - [Brew Test Bot For Maintainers](Brew-Test-Bot-For-Core-Contributors.md)
 - [Common Issues for Maintainers](Common-Issues-for-Core-Contributors.md)
+- [Releases](Releases.md)
+
+## Governance
+
+- [Homebrew Governance](Homebrew-Governance.md)

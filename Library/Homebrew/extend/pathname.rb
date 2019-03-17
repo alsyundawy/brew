@@ -135,10 +135,11 @@ class Pathname
   end
 
   def install_symlink_p(src, new_basename)
-    src = Pathname(src).expand_path(self)
-    dst = join(new_basename)
     mkpath
-    FileUtils.ln_sf(src.relative_path_from(dst.parent), dst)
+    dstdir = realpath
+    src = Pathname(src).expand_path(dstdir)
+    src = src.dirname.realpath/src.basename if src.dirname.exist?
+    FileUtils.ln_sf(src.relative_path_from(dstdir), dstdir/new_basename)
   end
   private :install_symlink_p
 
@@ -345,9 +346,7 @@ class Pathname
   # Writes an exec script that invokes a Java jar
   def write_jar_script(target_jar, script_name, java_opts = "", java_version: nil)
     mkpath
-    java_home = if java_version
-      "JAVA_HOME=\"#{Language::Java.java_home_shell(java_version)}\" "
-    end
+    java_home = ("JAVA_HOME=\"#{Language::Java.java_home_shell(java_version)}\" " if java_version)
     join(script_name).write <<~SH
       #!/bin/bash
       #{java_home}exec java #{java_opts} -jar #{target_jar} "$@"

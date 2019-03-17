@@ -309,6 +309,11 @@ then
   esac
 fi
 
+if [[ "$HOMEBREW_COMMAND" = "audit" || "$HOMEBREW_COMMAND" = "style" ]]
+then
+  export HOMEBREW_INSTALL_BUNDLER_GEMS_FIRST="1"
+fi
+
 # Set HOMEBREW_DEV_CMD_RUN for users who have run a development command.
 # This makes them behave like HOMEBREW_DEVELOPERs for brew update.
 if [[ -z "$HOMEBREW_DEVELOPER" ]]
@@ -349,6 +354,9 @@ fi
 
 check-run-command-as-root() {
   [[ "$(id -u)" = 0 ]] || return
+
+  # Allow Docker to do everything as root (as it's normal there)
+  [[ -f /proc/1/cgroup ]] && grep docker -q /proc/1/cgroup && return
 
   # Homebrew Services may need `sudo` for system-wide daemons.
   [[ "$HOMEBREW_COMMAND" = "services" ]] && return
@@ -411,7 +419,8 @@ update-preinstall() {
   [[ -z "$HOMEBREW_AUTO_UPDATE_CHECKED" ]] || return
   [[ -z "$HOMEBREW_UPDATE_PREINSTALL" ]] || return
 
-  if [[ "$HOMEBREW_COMMAND" = "install" || "$HOMEBREW_COMMAND" = "upgrade" || "$HOMEBREW_COMMAND" = "tap" ||
+  if [[ "$HOMEBREW_COMMAND" = "install" || "$HOMEBREW_COMMAND" = "upgrade" ||
+        "$HOMEBREW_COMMAND" = "tap" && $HOMEBREW_ARG_COUNT -gt 1 ||
         "$HOMEBREW_CASK_COMMAND" = "install" || "$HOMEBREW_CASK_COMMAND" = "upgrade" ]]
   then
     export HOMEBREW_AUTO_UPDATING="1"

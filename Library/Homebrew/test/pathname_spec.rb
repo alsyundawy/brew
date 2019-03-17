@@ -118,6 +118,7 @@ describe Pathname do
 
   describe "#ensure_writable" do
     it "makes a file writable and restores permissions afterwards" do
+      skip "User is root so everything is writable." if Process.euid.zero?
       touch file
       chmod 0555, file
       expect(file).not_to be_writable
@@ -243,6 +244,14 @@ describe Pathname do
     it "can install relative paths as symlinks" do
       dst.install_symlink "foo" => "bar"
       expect((dst/"bar").readlink).to eq(described_class.new("foo"))
+    end
+
+    it "can install relative symlinks in a symlinked directory" do
+      mkdir_p dst/"1/2"
+      dst.install_symlink "1/2" => "12"
+      expect((dst/"12").readlink).to eq(described_class.new("1/2"))
+      (dst/"12").install_symlink dst/"foo"
+      expect((dst/"12/foo").readlink).to eq(described_class.new("../../foo"))
     end
   end
 
